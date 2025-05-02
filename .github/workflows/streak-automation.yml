@@ -5,6 +5,9 @@ on:
     - cron: '5 */4 * * *'  # Runs every 4 hours at minute 5 (UTC)
   workflow_dispatch:        # Allows manual triggering
 
+permissions:
+  contents: read  # Restrict GITHUB_TOKEN to minimum needed permissions
+
 jobs:
   streak:
     runs-on: ubuntu-latest
