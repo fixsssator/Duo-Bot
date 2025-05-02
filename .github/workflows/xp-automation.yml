@@ -6,48 +6,18 @@ on:
   workflow_dispatch:        # Allows manual triggering
 
 jobs:
-  xp:
+  send-xp:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Send XP request
+      - name: Run XP request
         run: |
           echo "📤 Sending XP request..."
-
-          # Function to send the request and get the response
-          send_xp_request() {
-            local amount=$1
-            RESPONSE=$(curl -v --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
-              -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"gain_type\": \"xp\", \"amount\": $amount}")
-            echo "$RESPONSE"
-          }
-
-          # First try to send XP
-          RESPONSE=$(send_xp_request 30000)
-          
-          # Check if the response contains "error" or if it's a failure
-          if echo "$RESPONSE" | grep -q '"error"'; then
-            echo "Failed to send XP. Checking max amount..."
-
-            # Attempt to extract max_amount from the response
-            max_amount=$(echo "$RESPONSE" | grep -oP '"max_amount":\s*\K[0-9]+')
-            
-            # Check if we successfully extracted the max amount
-            if [ -z "$max_amount" ]; then
-              echo "Could not determine the max amount. Exiting."
-              exit 1
-            else
-              echo "Max amount determined: $max_amount"
-              echo "📤 Sending max amount: $max_amount"
-              RESPONSE=$(send_xp_request $max_amount)
-            fi
-          else
-            echo "Successfully sent XP."
-          fi
-          
+          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"gain_type": "xp", "amount": 30000}')
           echo "📨 Response from server:"
           echo "$RESPONSE"
