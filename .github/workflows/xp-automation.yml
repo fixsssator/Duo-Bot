@@ -15,7 +15,7 @@ jobs:
       - name: Send XP request
         run: |
           echo "📤 Sending XP request..."
-          
+
           # Function to send the request and get the response
           send_xp_request() {
             local amount=$1
@@ -29,10 +29,11 @@ jobs:
           # First try to send XP
           RESPONSE=$(send_xp_request 30000)
           
-          if echo "$RESPONSE" | grep -q "error"; then
+          # Check if the response contains "error" or if it's a failure
+          if echo "$RESPONSE" | grep -q '"error"'; then
             echo "Failed to send XP. Checking max amount..."
-            
-            # Extract the max amount you can request from the response
+
+            # Attempt to extract max_amount from the response
             max_amount=$(echo "$RESPONSE" | grep -oP '"max_amount":\s*\K[0-9]+')
             
             # Check if we successfully extracted the max amount
