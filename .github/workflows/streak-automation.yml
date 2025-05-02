@@ -3,18 +3,18 @@ name: Streak Automation
 on:
   schedule:
     - cron: '0 */4 * * *'  # Runs every 4 hours
-  workflow_dispatch:  # Allows you to manually trigger it if needed
+  workflow_dispatch:        # Allows manual triggering
 
 jobs:
   streak:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
-    - name: Run streak request
-  run: |
-    curl --ssl-no-revoke -X POST https://api.duolingopro.net/streak \
-      -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
-      -H "Content-Type: application/json" \
-      -d "{\"amount\": 10}"
+      - name: Run streak request
+        run: |
+          curl --ssl-no-revoke -X POST https://api.duolingopro.net/streak \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"amount\": 10}"
