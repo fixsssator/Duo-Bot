@@ -2,7 +2,7 @@ name: Streak Automation
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Runs every 4 hours
+    - cron: '5 */4 * * *'  # Runs every 4 hours at minute 5 (UTC)
   workflow_dispatch:        # Allows manual triggering
 
 jobs:
@@ -14,7 +14,10 @@ jobs:
 
       - name: Run streak request
         run: |
-          curl --ssl-no-revoke -X POST https://api.duolingopro.net/streak \
+          echo "📤 Sending streak request..."
+          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/streak \
             -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"amount\": 10}"
+            -d '{"amount": 10}')
+          echo "📨 Response from server:"
+          echo "$RESPONSE"
