@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # Allows manual triggering
 
 permissions:
-  contents: write  # 'write' to commit dashboard image
+  contents: write  # Changed from 'read' to 'write' to commit dashboard image
 
 jobs:
   streak:
@@ -36,7 +36,7 @@ jobs:
             const page = await browser.newPage();
             await page.setViewport({width: 800, height: 400});
             await page.goto('file://' + process.cwd() + '/dashboard.html', {waitUntil: 'networkidle2'});
-            await page.waitForTimeout(2000); // Wait for animations to load
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for animations to load
             await page.screenshot({path: 'dashboard.png', type: 'png'});
             await browser.close();
             console.log('Dashboard image generated successfully!');
