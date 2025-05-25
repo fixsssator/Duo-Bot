@@ -18,7 +18,7 @@ jobs:
       - name: Send Super Request
         run: |
           echo "🚀 Requesting Super..."
-          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/super \
+          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"type": "super"}')
