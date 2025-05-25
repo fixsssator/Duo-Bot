@@ -6,86 +6,80 @@ on:
   workflow_dispatch:        # Allows manual triggering
 
 permissions:
-  contents: write  # Changed from 'read' to 'write' to commit dashboard image
+  contents: write
 
 jobs:
   send-xp:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: Install dependencies
+      - name: Install Puppeteer
         run: |
           npm install puppeteer
-          npm install gifencoder
-          npm install canvas
 
-      - name: Generate Dashboard GIF
+      - name: Generate Dashboard Screenshot
         run: |
-          node -e "
+          node << 'EOF'
           const puppeteer = require('puppeteer');
           const fs = require('fs');
-          const GIFEncoder = require('gifencoder');
-          const { createCanvas, loadImage } = require('canvas');
           
           (async () => {
-            console.log('🎬 Starting GIF generation...');
+            console.log('📸 Taking dashboard screenshot...');
             
             const browser = await puppeteer.launch({
-              headless: true,
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
+              headless: 'new',
+              args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+              ]
             });
             
-            const page = await browser.newPage();
-            await page.setViewport({width: 800, height: 400});
-            await page.goto('file://' + process.cwd() + '/dashboard.html', {waitUntil: 'networkidle2'});
-            
-            // Wait for animations to start
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            console.log('📸 Capturing frames...');
-            const encoder = new GIFEncoder(800, 400);
-            encoder.createWriteStream('dashboard.gif');
-            encoder.start();
-            encoder.setRepeat(0);   // 0 for repeat, -1 for no-repeat
-            encoder.setDelay(100);  // frame delay in ms (100ms = 10fps)
-            encoder.setQuality(10); // image quality. 10 is default.
-            
-            // Capture 50 frames (5 seconds at 10fps)
-            for(let i = 0; i < 50; i++) {
-              const screenshot = await page.screenshot({type: 'png'});
-              const img = await loadImage(screenshot);
-              const canvas = createCanvas(800, 400);
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0);
-              encoder.addFrame(ctx);
-              await new Promise(resolve => setTimeout(resolve, 100));
-              console.log(\`Frame \${i + 1}/50 captured\`);
+            try {
+              const page = await browser.newPage();
+              await page.setViewport({width: 800, height: 400});
+              
+              const htmlPath = 'file://' + process.cwd() + '/dashboard.html';
+              console.log('🌐 Loading:', htmlPath);
+              
+              await page.goto(htmlPath, {
+                waitUntil: 'networkidle2',
+                timeout: 30000
+              });
+              
+              // Wait for animations
+              console.log('⏳ Waiting for animations...');
+              await page.waitForTimeout(3000);
+              
+              // Take screenshot
+              await page.screenshot({
+                path: 'dashboard.png',
+                type: 'png',
+                clip: { x: 0, y: 0, width: 800, height: 400 }
+              });
+              
+              console.log('Screenshot saved as dashboard.png');
+              
+              // For now, copy PNG as GIF (we'll make it animated later)
+              fs.copyFileSync('dashboard.png', 'dashboard.gif');
+              console.log('dashboard.gif created');
+              
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            } finally {
+              await browser.close();
             }
-            
-            encoder.finish();
-            await browser.close();
-            console.log('GIF generated successfully!');
-            
-            // Also create a static PNG fallback
-            const browser2 = await puppeteer.launch({
-              headless: true,
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
-            const page2 = await browser2.newPage();
-            await page2.setViewport({width: 800, height: 400});
-            await page2.goto('file://' + process.cwd() + '/dashboard.html', {waitUntil: 'networkidle2'});
-            await page2.screenshot({path: 'dashboard.png', type: 'png'});
-            await browser2.close();
-            console.log('📱 PNG fallback created!');
           })();
-          "
+          EOF
 
       - name: Run XP request
         run: |
@@ -97,17 +91,36 @@ jobs:
           echo "📨 Response from server:"
           echo "$RESPONSE"
 
-      - name: Update README with new timestamp
+      - name: Update README timestamp
         run: |
-          # Update the last run timestamp in README
           CURRENT_TIME=$(date -u '+%H:%M UTC')
           CURRENT_DATE=$(date -u '+%Y-%m-%d')
-          sed -i "s/Last Updated: .*/Last Updated: $CURRENT_DATE $CURRENT_TIME/" README.md
+          
+          # Update timestamp in README if it exists
+          if [ -f "README.md" ]; then
+            sed -i "s/Last Updated: .*/Last Updated: $CURRENT_DATE $CURRENT_TIME/" README.md
+            echo "README timestamp updated"
+          fi
 
       - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add dashboard.gif dashboard.png README.md
-          git diff --staged --quiet || git commit -m "🚀 Update dashboard GIF and stats [automated]"
-          git push
+          
+          echo "📁 Files in directory:"
+          ls -la dashboard.*
+          
+          # Add files that exist
+          [ -f "dashboard.png" ] && git add dashboard.png && echo "Added dashboard.png"
+          [ -f "dashboard.gif" ] && git add dashboard.gif && echo "Added dashboard.gif"  
+          [ -f "README.md" ] && git add README.md && echo "Added README.md"
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit"
+          else
+            echo "📝 Committing changes..."
+            git commit -m "🚀 Update dashboard [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+            git push
+            echo "Changes pushed successfully!"
+          fi
