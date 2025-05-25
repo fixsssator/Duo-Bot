@@ -11,7 +11,7 @@
 <details>
 <summary><b>✨ FEATURES</b></summary>
 
-- **Super Duolingo Automation** - Automated Super Duolingo requests every 3 days
+- **Super Duolingo Automation** - Automated Super Duolingo requests daily
 - **XP Gain Automation** - Automated XP gain requests every 4 hours  
 - **Streak Maintenance** - Automated streak preservation
 - **Manual Execution** - Run workflows manually when needed
@@ -39,7 +39,7 @@
 .
 ├── .github
 │   └── workflows
-│       ├── super-duolingo.yml     # Super Duolingo automation (every 3 days)
+│       ├── super-duolingo.yml     # Super Duolingo automation (daily)
 │       ├── xp-automation.yml      # XP gain automation (every 4 hours)
 │       └── streak-automation.yml  # Streak maintenance
 └── README.md
@@ -52,7 +52,7 @@
 
 | Workflow | Frequency | Description |
 |----------|-----------|-------------|
-| Super Duolingo | Every 3 days at 00:10 UTC | Requests Super Duolingo status |
+| Super Duolingo | Daily at 00:00 UTC | Requests Super Duolingo status |
 | XP Automation | Every 4 hours | Maintains XP gains |
 | Streak Maintenance | Daily | Preserves learning streak |
 
