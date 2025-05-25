@@ -1,52 +1,26 @@
-name: Super Duolingo Automation
+name: XP Automation
 
 on:
   schedule:
-    - cron: '10 0 */3 * *'  # Every 3 days at 00:10 UTC
-  workflow_dispatch:        # Optional: manual trigger
+    - cron: '0 0 1,4,7,10,13,16,19,22,25,28 * *'  # Every 3 days at 00:00 UTC
+  workflow_dispatch:  # Allow manual trigger
 
 permissions:
   contents: read
 
 jobs:
-  super-request:
+  send-xp:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Request Super Duolingo
+      - name: Run XP request
         run: |
-          echo "🌟 Starting Super Duolingo request at $(date -u)"
-
-          # Mask token in logs just in case
-          echo "::add-mask::${{ secrets.DUOLINGO_TOKEN }}"
-
-          # Make the request
-          RESPONSE=$(curl --write-out "HTTPSTATUS:%{http_code}" --silent --show-error --ssl-no-revoke -X POST https://api.duolingopro.net/super \
+          echo "📤 Sending XP request..."
+          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"type": "super"}')
-
-          # Separate response body and status
-          BODY=$(echo "$RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
-          STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-
-          echo "HTTP Status Code: $STATUS"
-
-          # Safe logging of response
-          echo "📨 Raw Response Body (sanitized if JSON):"
-          echo "$BODY" | jq 'del(.token, .auth, .authorization)' 2>/dev/null || echo "⚠️ Response not in JSON format or jq failed."
-
-          # Check status and handle success or error
-          if [ "$STATUS" -eq 200 ]; then
-            echo "Successfully requested Super Duolingo!"
-          else
-            echo "Failed to get Super Duolingo. Status code: $STATUS"
-            echo "Attempting to extract error message..."
-
-            ERROR_MSG=$(echo "$BODY" | jq -r '.error // .message // "No error message found."' 2>/dev/null)
-            echo "Error: $ERROR_MSG"
-
-            exit 1  # Fail the workflow
-          fi
+            -d '{"gain_type": "xp", "amount": 30000}')
+          echo "📨 Response from server:"
+          echo "$RESPONSE"
