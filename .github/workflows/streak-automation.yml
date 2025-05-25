@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # Allows manual triggering
 
 permissions:
-  contents: read  # Restrict GITHUB_TOKEN to minimum needed permissions
+  contents: write  # 'write' to commit dashboard image
 
 jobs:
   streak:
@@ -14,6 +14,34 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Puppeteer
+        run: |
+          npm install puppeteer
+
+      - name: Generate Dashboard Image
+        run: |
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            await page.setViewport({width: 800, height: 400});
+            await page.goto('file://' + process.cwd() + '/dashboard.html', {waitUntil: 'networkidle2'});
+            await page.waitForTimeout(2000); // Wait for animations to load
+            await page.screenshot({path: 'dashboard.png', type: 'png'});
+            await browser.close();
+            console.log('Dashboard image generated successfully!');
+          })();
+          "
 
       - name: Run streak request
         run: |
@@ -24,3 +52,11 @@ jobs:
             -d '{"amount": 10}')
           echo "📨 Response from server:"
           echo "$RESPONSE"
+
+      - name: Commit and push dashboard image
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add dashboard.png
+          git diff --staged --quiet || git commit -m "Update dashboard image [streak automation]"
+          git push
