@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XP Automation Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Orbitron', monospace;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #2d1b69 100%);
+            color: #00ff88;
+            overflow: hidden;
+            width: 800px;
+            height: 400px;
+            position: relative;
+        }
+        
+        .container {
+            padding: 20px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .title {
+            font-size: 28px;
+            font-weight: 900;
+            color: #00ff88;
+            text-shadow: 0 0 20px #00ff88;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: #88ffaa;
+            margin-top: 5px;
+            opacity: 0.8;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            flex-grow: 1;
+            align-items: center;
+        }
+        
+        .countdown-section {
+            text-align: center;
+        }
+        
+        .countdown-label {
+            font-size: 16px;
+            color: #88ffaa;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .countdown-timer {
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 0 0 15px #00ff88;
+            font-family: 'Orbitron', monospace;
+            margin-bottom: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #88ffaa);
+            border-radius: 4px;
+            transition: width 1s ease;
+            animation: progressPulse 2s ease-in-out infinite;
+        }
+        
+        .stats-section {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(0,255,136,0.3);
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #88ffaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        
+        .xp-value {
+            color: #ffd700;
+            text-shadow: 0 0 10px #ffd700;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 1.5s ease-in-out infinite;
+            margin-right: 8px;
+        }
+        
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin-top: 20px;
+        }
+        
+        .particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 20px #00ff88; }
+            to { text-shadow: 0 0 30px #00ff88, 0 0 40px #00ff88; }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        
+        @keyframes progressPulse {
+            0%, 100% { box-shadow: 0 0 5px #00ff88; }
+            50% { box-shadow: 0 0 15px #00ff88, 0 0 25px #00ff88; }
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-400px) rotate(360deg); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+    
+    <div class="container">
+        <div class="header">
+            <div class="title">⚡ DUOLINGO PRO AUTOMATION ⚡</div>
+            <div class="subtitle">XP & STREAK SYSTEM ACTIVE</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="countdown-section">
+                <div class="countdown-label">Next Strike In</div>
+                <div class="countdown-timer" id="countdown">--:--:--</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressBar"></div>
+                </div>
+                <div style="font-size: 12px; color: #88ffaa;">
+                    <span class="status-indicator"></span>DUAL AUTOMATION ONLINE
+                </div>
+            </div>
+            
+            <div class="stats-section">
+                <div class="stat-item">
+                    <span class="stat-label">XP Per Strike</span>
+                    <span class="stat-value xp-value">30,000 XP</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Streak Boost</span>
+                    <span class="stat-value" style="color: #ff6b6b; text-shadow: 0 0 10px #ff6b6b;">+10 Days</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Frequency</span>
+                    <span class="stat-value">Every 4H</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Last Strike</span>
+                    <span class="stat-value" id="lastRun">--:-- UTC</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value" style="color: #00ff88;">XP + STREAK</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            XP + STREAK AUTOMATION • GITHUB ACTIONS • LIVE DASHBOARD
+        </div>
+    </div>
+
+    <script>
+        // Create floating particles
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            for (let i = 0; i < 20; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 6 + 's';
+                particle.style.animationDuration = (Math.random() * 3 + 4) + 's';
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        // Calculate next run time (every 4 hours from last :05 minute)
+        function getNextRunTime() {
+            const now = new Date();
+            const currentHour = now.getUTCHours();
+            const currentMinute = now.getUTCMinutes();
+            
+            // Find the next run time (every 4 hours at :05)
+            let nextHour = Math.ceil(currentHour / 4) * 4;
+            if (nextHour === currentHour && currentMinute >= 5) {
+                nextHour += 4;
+            }
+            if (nextHour >= 24) nextHour = nextHour % 24;
+            
+            const nextRun = new Date(now);
+            nextRun.setUTCHours(nextHour, 5, 0, 0);
+            
+            // If the calculated time is in the past, add 4 hours
+            if (nextRun <= now) {
+                nextRun.setUTCHours(nextRun.getUTCHours() + 4);
+            }
+            
+            return nextRun;
+        }
+
+        // Get last run time
+        function getLastRunTime() {
+            const now = new Date();
+            const currentHour = now.getUTCHours();
+            const currentMinute = now.getUTCMinutes();
+            
+            let lastHour = Math.floor(currentHour / 4) * 4;
+            if (currentHour % 4 === 0 && currentMinute < 5) {
+                lastHour -= 4;
+            }
+            if (lastHour < 0) lastHour = 20; // Previous day
+            
+            const lastRun = new Date(now);
+            lastRun.setUTCHours(lastHour, 5, 0, 0);
+            
+            return lastRun;
+        }
+
+        // Update countdown and progress
+        function updateCountdown() {
+            const now = new Date();
+            const nextRun = getNextRunTime();
+            const lastRun = getLastRunTime();
+            const totalDuration = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+            
+            const timeLeft = nextRun - now;
+            const timeSinceLastRun = now - lastRun;
+            
+            // Calculate progress (0-100%)
+            const progress = Math.min((timeSinceLastRun / totalDuration) * 100, 100);
+            
+            // Format countdown
+            const hours = Math.floor(timeLeft / (1000 * 60 * 60));
+            const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+            
+            const countdownText = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Format last run time
+            const lastRunText = lastRun.toUTCString().slice(17, 22) + ' UTC';
+            
+            // Update DOM
+            document.getElementById('countdown').textContent = countdownText;
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('lastRun').textContent = lastRunText;
+        }
+
+        // Initialize
+        createParticles();
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+    </script>
+</body>
+</html>
