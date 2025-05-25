@@ -12,8 +12,7 @@
 <details open>
 <summary><b>📊 LIVE DASHBOARD</b></summary>
 
-![XP Automation Dashboard](dashboard.png)
-*Live countdown to next automation • XP + Streak every 4 hours*
+<iframe src="dashboard.html" width="800" height="400" frameborder="0"></iframe>
 
 </details>
 
