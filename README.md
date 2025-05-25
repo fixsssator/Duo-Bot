@@ -9,12 +9,21 @@
 ╚═════╝  ╚═════╝  ╚═════╝     ╚══════╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝     
 ```
 
+<details open>
+<summary><b>📊 LIVE DASHBOARD</b></summary>
+
+![XP Automation Dashboard](dashboard.png)
+*Live countdown to next automation • XP + Streak every 4 hours*
+
+</details>
+
 <details>
 <summary><b>⚙️ FEATURES</b></summary>
 
-- Automated XP gain requests every 4 hours
-- Automated streak maintenance 
+- Automated XP gain requests every 4 hours (30,000 XP)
+- Automated streak maintenance every 4 hours (+10 days)
 - Manual execution option
+- Live dashboard with countdown timer
 
 </details>
 
@@ -40,6 +49,8 @@
 │   └── workflows
 │       ├── xp-automation.yml  # XP gain automation
 │       └── streak-automation.yml  # Streak maintenance
+├── dashboard.html             # Live dashboard HTML
+├── dashboard.png             # Generated dashboard image
 └── README.md
 ```
 
