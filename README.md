@@ -25,7 +25,7 @@
 2. **Add repository secret:**
    ```
    Name: DUOLINGO_TOKEN
-   Value: your_duolingo_pro_api_token
+   Value: your_duolingo_api_token
    ```
 3. **Activate workflows in Actions tab**
 4. **Enjoy automated Super Duolingo! 🎉**
