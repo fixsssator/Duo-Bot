@@ -1,0 +1,26 @@
+name: Super Duolingo Automation
+
+on:
+  schedule:
+    - cron: '10 0 */3 * *'  # Every 3 days at 00:10 UTC
+  workflow_dispatch:        # Optional: manual trigger
+
+permissions:
+  contents: read  # Minimum permissions
+
+jobs:
+  super-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Request Super Duolingo
+        run: |
+          echo "🌟 Requesting Super Duolingo..."
+          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/super \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"type": "super"}')
+          echo "📨 Response from server:"
+          echo "$RESPONSE"
