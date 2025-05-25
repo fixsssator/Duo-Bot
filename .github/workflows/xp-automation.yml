@@ -24,7 +24,7 @@ jobs:
         run: |
           npm install puppeteer
 
-      - name: Generate Dashboard Image
+      - name: Generate Dashboard GIF
         run: |
           node -e "
           const puppeteer = require('puppeteer');
@@ -36,10 +36,19 @@ jobs:
             const page = await browser.newPage();
             await page.setViewport({width: 800, height: 400});
             await page.goto('file://' + process.cwd() + '/dashboard.html', {waitUntil: 'networkidle2'});
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for animations to load
+            
+            // Record multiple frames for GIF
+            const frames = [];
+            for(let i = 0; i < 30; i++) { // 30 frames = ~3 seconds at 10fps
+              await new Promise(resolve => setTimeout(resolve, 100)); // 100ms between frames
+              const screenshot = await page.screenshot({type: 'png'});
+              frames.push(screenshot);
+            }
+            
+            // Save as static PNG for now (will add GIF conversion)
             await page.screenshot({path: 'dashboard.png', type: 'png'});
             await browser.close();
-            console.log('Dashboard image generated successfully!');
+            console.log('Dashboard frames captured!');
           })();
           "
 
