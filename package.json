@@ -1,0 +1,16 @@
+{
+  "name": "duolingo-pro-automation",
+  "version": "1.0.0",
+  "description": "Automated XP and Streak system with live dashboard",
+  "scripts": {
+    "generate-gif": "node generate-gif.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "gifencoder": "^2.0.1",
+    "canvas": "^2.11.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
