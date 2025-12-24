@@ -2,8 +2,8 @@ name: XP Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'  # Каждые 4 часа в 5-й минуте (UTC)
-  workflow_dispatch:        # Ручной запуск
+    - cron: '5 */4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,70 +15,66 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Request XP from Duolingo PRO
+      - name: Send XP
         run: |
-          echo "🚀 Starting XP automation..."
-          echo "⏳ Waiting 10 seconds before request..."
-          sleep 10
+          echo "=== Starting XP Automation ==="
+          echo "Time: $(date)"
           
-          # Проверяем токен
+          # Получаем токен
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          
+          # Базовая проверка токена
           if [ -z "$TOKEN" ]; then
-            echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
-            echo "Please add your JWT token to GitHub Secrets"
+            echo "❌ ERROR: DUOLINGO_TOKEN secret is empty!"
             exit 1
           fi
           
-          echo "📤 Sending XP request (30,000 XP)..."
+          # Проверяем формат JWT токена
+          JWT_PARTS=$(echo "$TOKEN" | tr '.' '\n' | wc -l)
+          if [ "$JWT_PARTS" -ne 3 ]; then
+            echo "⚠️  Warning: Token doesn't look like standard JWT ($JWT_PARTS parts instead of 3)"
+          fi
           
-          # Создаем корректный payload
+          # Основной запрос (оригинальный формат)
+          echo ""
+          echo "Sending XP request..."
+          
           PAYLOAD='{
-            "type": "xp",
-            "amount": 30000,
-            "version": "3.1BETA.03"
+            "gain_type": "xp",
+            "amount": 30000
           }'
-          
-          # Отправляем запрос с обработкой SSE (Server-Sent Events)
-          echo "🔄 Processing request (this may take a moment)..."
           
           RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -H "Accept: text/event-stream" \
-            -d "$PAYLOAD")
+            -H "User-Agent: Duolingo-PRO/3.1BETA.03" \
+            -d "$PAYLOAD" \
+            -w "\n%{http_code}")
           
-          # Парсим последний JSON из потока SSE
-          LAST_LINE=$(echo "$RESPONSE" | tail -n1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
           
-          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-            # Извлекаем сообщение об успехе
-            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            XP_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*You received \([0-9]*\) XP.*/\1/p')
-            
-            echo "✅ $SUCCESS_MSG"
-            echo "🎉 Successfully received $XP_AMOUNT XP!"
-            
-            # Извлекаем информацию о лимите
-            LIMIT_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            echo "📊 $LIMIT_INFO"
-            
-            # Отправляем уведомление (опционально)
-            echo "⏰ Next request available in 4 hours"
-            
-          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
-            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            echo "❌ Request failed: $ERROR_MSG"
-            exit 1
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          # Проверяем результат
+          if [[ "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            echo "✅ Success! XP sent successfully."
           else
-            echo "⚠️  Unexpected response format:"
-            echo "$LAST_LINE"
+            echo "❌ Failed with HTTP $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "403" ]; then
+              echo ""
+              echo "🔧 Token likely expired. Get a fresh JWT token:"
+              echo "1. Login to Duolingo in browser"
+              echo "2. Open DevTools (F12)"
+              echo "3. Go to Application → Cookies"
+              echo "4. Find 'jwt_token' cookie"
+              echo "5. Copy its VALUE and update GitHub secret"
+            fi
+            
             exit 1
           fi
           
-          echo "✨ XP automation completed successfully!"
-
-      - name: Log completion
-        run: |
-          echo "📝 Logging completion..."
-          echo "XP request completed at: $(date)"
-          echo "Next scheduled run: 4 hours from now"
+          echo ""
+          echo "=== Finished at: $(date) ==="
