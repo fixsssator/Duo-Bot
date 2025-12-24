@@ -15,102 +15,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Request Super from Duolingo PRO
+      - name: Request 3 Days of Super
         run: |
           echo "🚀 Starting Super automation..."
           echo "⏳ Waiting 10 seconds before request..."
           sleep 10
           
-          # Проверяем токен
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           if [ -z "$TOKEN" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
-            echo "Please add your JWT token to GitHub Secrets"
             exit 1
           fi
           
-          echo "📤 Sending Super request (1 month)..."
+          echo "📤 Requesting 3 Days of Super..."
           
-          # Создаем корректный payload для Super
-          PAYLOAD='{
-            "type": "super",
-            "amount": 1,
-            "version": "3.1BETA.03"
-          }'
-          
-          echo "🔄 Processing request (this may take a moment)..."
-          
-          # Отправляем запрос с обработкой SSE (Server-Sent Events)
           RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
-            -d "$PAYLOAD")
+            -d '{"type": "super", "amount": 1, "version": "3.1BETA.03"}')
           
-          # Проверяем, что получили ответ
-          if [ -z "$RESPONSE" ]; then
-            echo "❌ ERROR: No response from server"
-            exit 1
+          # Извлекаем финальный ответ
+          FINAL_RESPONSE=$(echo "$RESPONSE" | grep '"status": "completed"' | tail -n1 | sed 's/^data: //')
+          
+          if [ -z "$FINAL_RESPONSE" ]; then
+            FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           fi
           
-          echo "📝 Raw response received"
+          echo "📋 Server response:"
+          echo "$FINAL_RESPONSE" | jq '.' 2>/dev/null || echo "$FINAL_RESPONSE"
           
-          # Парсим последний JSON из потока SSE
-          LAST_LINE=$(echo "$RESPONSE" | grep -E '^data:' | tail -n1 | sed 's/^data: //')
-          
-          if [ -z "$LAST_LINE" ]; then
-            LAST_LINE="$RESPONSE"
-          fi
-          
-          echo "📋 Parsed response: $LAST_LINE"
-          
-          # Проверяем статус
-          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-            # Извлекаем сообщение об успехе
-            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            SUPER_DAYS=$(echo "$LAST_LINE" | sed -n 's/.*Super for \([0-9]*\) days.*/\1/p')
-            
-            if [ -n "$SUPER_MSG" ]; then
-              echo "✅ $SUCCESS_MSG"
-            else
-              echo "✅ Request completed successfully!"
-            fi
-            
-            if [ -n "$SUPER_DAYS" ]; then
-              echo "🎉 Successfully received Super for $SUPER_DAYS days!"
-            else
-              echo "🎉 Successfully received Super subscription!"
-            fi
-            
-            # Извлекаем дополнительную информацию
-            BODY_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            if [ -n "$BODY_INFO" ]; then
-              echo "📊 $BODY_INFO"
-            fi
-            
-            echo "⏰ Next Super request available tomorrow"
-            
-          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
-            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            if [ -n "$ERROR_MSG" ]; then
-              echo "❌ Request failed: $ERROR_MSG"
-            else
-              echo "❌ Request failed with unknown error"
-            fi
-            exit 1
-          elif echo "$LAST_LINE" | grep -q 'rate limit'; then
-            echo "⏳ Rate limited. Please try again later."
-            exit 1
+          if echo "$FINAL_RESPONSE" | grep -q '"status": "completed"'; then
+            echo "✅ Request successfully processed by server!"
+            echo "📅 Attempted to add: 3 Days of Super"
+            echo "💡 Note: Check your Duolingo account to confirm"
+            echo "🔄 Next attempt: Available in 1 day"
           else
-            echo "⚠️  Unexpected response format:"
-            echo "$RESPONSE"
+            echo "❌ Request failed"
             exit 1
           fi
           
-          echo "✨ Super automation completed successfully!"
+          echo "✨ Automation completed at: $(date -u '+%H:%M:%S UTC')"
 
       - name: Log completion
         run: |
-          echo "📝 Logging completion..."
-          echo "Super request completed at: $(date -u)"
-          echo "Next scheduled run: tomorrow at 00:00 UTC"
+          echo "📝 Log entry: Super request attempted"
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Status: Request sent to Duolingo PRO API"
+          echo "Action required: Verify in Duolingo app/website"
