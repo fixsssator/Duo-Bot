@@ -2,25 +2,116 @@ name: Streak Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'  # Runs every 4 hours at minute 5 (UTC)!
-  workflow_dispatch:        # Allows manual triggering
+    - cron: '5 */4 * * *'  # Запуск каждые 4 часа на 5-й минуте (UTC)
+  workflow_dispatch:        # Ручной запуск
 
 permissions:
-  contents: read  # Restrict GITHUB_TOKEN to minimum needed permissions
+  contents: read
 
 jobs:
   streak:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Run streak request
+      - name: Request Streak from Duolingo PRO
         run: |
-          echo "📤 Sending streak request..."
-          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/streak \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          echo "🔥 Starting Streak automation..."
+          echo "⏳ Waiting 10 seconds before request..."
+          sleep 10
+          
+          # Проверяем токен
+          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$TOKEN" ]; then
+            echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
+            echo "Please add your JWT token to GitHub Secrets"
+            exit 1
+          fi
+          
+          echo "📤 Sending streak request (10 streak)..."
+          
+          # Создаем корректный payload
+          PAYLOAD='{
+            "type": "streak",
+            "amount": 10,
+            "version": "3.1BETA.03"
+          }'
+          
+          echo "🔄 Processing request (this may take a moment)..."
+          
+          # Отправляем запрос с обработкой SSE (Server-Sent Events)
+          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"amount": 10}')
-          echo "📨 Response from server:"
-          echo "$RESPONSE"
+            -H "Accept: text/event-stream" \
+            -d "$PAYLOAD")
+          
+          # Парсим последний JSON из потока SSE
+          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
+          
+          # Если не удалось распарсить, используем весь ответ
+          if [ -z "$LAST_LINE" ]; then
+            LAST_LINE="$RESPONSE"
+          fi
+          
+          echo "📋 Server response:"
+          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
+          
+          # Проверяем статус ответа
+          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
+            # Извлекаем сообщение об успехе
+            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            STREAK_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*received \([0-9]*\) streak.*/\1/p')
+            
+            if [ -n "$SUCCESS_MSG" ]; then
+              echo "✅ $SUCCESS_MSG"
+            else
+              echo "✅ Request completed successfully!"
+            fi
+            
+            if [ -n "$STREAK_AMOUNT" ]; then
+              echo "🔥 Successfully received $STREAK_AMOUNT streak days!"
+            else
+              echo "🔥 Successfully extended your streak!"
+            fi
+            
+            # Извлекаем дополнительную информацию
+            BODY_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+            if [ -n "$BODY_INFO" ]; then
+              echo "📊 $BODY_INFO"
+            fi
+            
+            echo "⏰ Next request available in 4 hours"
+            
+          elif echo "$LAST_LINE" | grep -q '"status": false'; then
+            # Обрабатываем лимит (как в случае с Super)
+            HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
+            BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
+            
+            echo "⏳ LIMIT REACHED: $HEAD"
+            echo "📊 Details: $BODY"
+            echo "✅ INFO: Daily limit already used - this is expected"
+            echo "🔄 Next streak request will be available according to the limit"
+            
+          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
+            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            echo "❌ Request failed: $ERROR_MSG"
+            exit 1
+          else
+            # Если получили ответ, но не распознали формат
+            if [ -n "$LAST_LINE" ]; then
+              echo "⚠️  Received response (check above for details)"
+            else
+              echo "❌ ERROR: No response from server"
+              exit 1
+            fi
+          fi
+          
+          echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
+
+      - name: Log completion
+        run: |
+          echo "📝 Log entry: Streak automation ran"
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Next scheduled run: In 4 hours"
