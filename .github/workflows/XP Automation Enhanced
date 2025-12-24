@@ -1,0 +1,53 @@
+name: XP Automation Enhanced
+
+on:
+  schedule:
+    - cron: '5 */4 * * *'
+  workflow_dispatch:
+
+jobs:
+  send-xp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug token availability
+        run: |
+          if [ -z "${{ secrets.DUOLINGO_TOKEN }}" ]; then
+            echo "❌ DUOLINGO_TOKEN secret is empty or not set"
+            exit 1
+          else
+            echo "✅ Token is set (first 10 chars): ${DUOLINGO_TOKEN:0:10}..."
+          fi
+        env:
+          DUOLINGO_TOKEN: ${{ secrets.DUOLINGO_TOKEN }}
+      
+      - name: Test API with different formats
+        run: |
+          echo "🧪 Testing API endpoint..."
+          
+          # Test 1: Original format
+          echo "Test 1: Original format"
+          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"gain_type": "xp", "amount": 30000}' \
+            -w "\nStatus: %{http_code}\n"
+          
+          sleep 2
+          
+          # Test 2: Alternative format
+          echo -e "\nTest 2: Alternative format"
+          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"action": "add_xp", "value": 30000}' \
+            -w "\nStatus: %{http_code}\n"
+          
+          sleep 2
+          
+          # Test 3: Different endpoint
+          echo -e "\nTest 3: Different endpoint"
+          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/v1/gain-xp \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"xp": 30000}' \
+            -w "\nStatus: %{http_code}\n"
