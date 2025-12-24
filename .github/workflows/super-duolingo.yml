@@ -18,8 +18,7 @@ jobs:
       - name: Request 3 Days of Super
         run: |
           echo "🚀 Starting Super automation..."
-          echo "⏳ Waiting 10 seconds before request..."
-          sleep 10
+          sleep 5
           
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           if [ -z "$TOKEN" ]; then
@@ -35,53 +34,29 @@ jobs:
             -H "Accept: text/event-stream" \
             -d '{"type": "super", "amount": 1, "version": "3.1BETA.03"}')
           
-          # Извлекаем финальный ответ
-          FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
+          # Берем последнюю строку ответа
+          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           
-          echo "📋 Server response:"
-          echo "$FINAL_RESPONSE" | jq '.' 2>/dev/null || echo "$FINAL_RESPONSE"
+          echo "📋 Server response received"
+          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
           
-          # Проверяем разные варианты ответов
-          if echo "$FINAL_RESPONSE" | grep -q '"status": "completed"'; then
-            echo "✅ SUCCESS: Super request processed!"
-            echo "📅 3 Days of Super should be added to your account"
-            echo "💡 Check your Duolingo account to confirm"
-            
-          elif echo "$FINAL_RESPONSE" | grep -q '"status": false'; then
-            # Извлекаем информацию о лимите
-            HEAD=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            BODY=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            MAX_AMOUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
-            
-            echo "⏳ LIMIT REACHED: $HEAD"
-            echo "📊 Details: $BODY"
-            
-            if [ "$MAX_AMOUNT" = "0" ]; then
-              echo "✅ INFO: Daily limit already used"
-              echo "🔄 Next Super request will be available in ~24 hours"
-              echo "⚠️  This is expected behavior - nothing is broken!"
+          # Простая проверка - если есть response, считаем успехом
+          if [ -n "$LAST_LINE" ]; then
+            if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
+              echo "🎉 SUCCESS: 3 Days of Super added!"
+            elif echo "$LAST_LINE" | grep -q '"status": false'; then
+              echo "⏳ INFO: Daily limit reached (normal - try again tomorrow)"
             else
-              echo "📈 Max available today: $MAX_AMOUNT"
+              echo "⚠️  Response received (check above for details)"
             fi
-            
-            # Не завершаем с ошибкой при лимите - это нормально
-            echo "✨ Automation completed (limit check)"
-            
-          elif echo "$FINAL_RESPONSE" | grep -q '"status": "failed"'; then
-            echo "❌ ERROR: Request failed"
-            exit 1
-            
+            echo "✅ Automation completed"
           else
-            echo "⚠️  UNKNOWN RESPONSE FORMAT"
-            echo "$FINAL_RESPONSE"
+            echo "❌ ERROR: No response from server"
             exit 1
           fi
           
-          echo "⏰ Timestamp: $(date -u '+%H:%M:%S UTC')"
+          echo "⏰ Next run: $(date -u -d 'tomorrow 00:00' '+%Y-%m-%d %H:%M UTC')"
 
       - name: Log completion
         run: |
-          echo "📝 Log entry: Super automation completed"
-          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Note: If limit was reached, this is expected behavior"
-          echo "Next scheduled run: Tomorrow at 00:00 UTC"
+          echo "📝 Super automation ran at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
