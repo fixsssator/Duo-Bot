@@ -15,75 +15,176 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Send XP
+      - name: Test XP automation
         run: |
-          echo "=== Starting XP Automation ==="
-          echo "Time: $(date)"
+          echo "=== XP Automation Debug Script ==="
+          echo "Script started at: $(date)"
           
+          # Получаем токен
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           
+          # Проверяем токен
+          echo ""
+          echo "1. Checking token..."
           if [ -z "$TOKEN" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is empty!"
             exit 1
           fi
           
-          echo "Token check (first 30 chars): ${TOKEN:0:30}..."
+          TOKEN_LENGTH=${#TOKEN}
+          echo "   Token length: $TOKEN_LENGTH characters"
+          echo "   First 20 chars: ${TOKEN:0:20}..."
+          echo "   Last 20 chars: ...${TOKEN: -20}"
           
-          # Тестируем разные форматы запросов
+          # Проверяем формат JWT токена
           echo ""
-          echo "Testing request format 1..."
-          RESPONSE1=$(curl -s -X POST "https://api.duolingopro.net/request" \
+          echo "2. Validating JWT token format..."
+          JWT_PARTS=$(echo "$TOKEN" | tr '.' '\n' | wc -l)
+          if [ "$JWT_PARTS" -eq 3 ]; then
+            echo "   ✅ Token appears to be valid JWT (3 parts)"
+            
+            # Декодируем payload для информации
+            JWT_PAYLOAD=$(echo "$TOKEN" | cut -d'.' -f2)
+            PADDING=$((4 - ${#JWT_PAYLOAD} % 4))
+            if [ $PADDING -eq 4 ]; then
+              PADDING=0
+            fi
+            for i in $(seq 1 $PADDING); do
+              JWT_PAYLOAD="${JWT_PAYLOAD}="
+            done
+            
+            echo "$JWT_PAYLOAD" | base64 -d 2>/dev/null | jq . 2>/dev/null || echo "   ⚠️  Cannot decode JWT payload (might be encrypted)"
+          else
+            echo "   ⚠️  Token doesn't look like standard JWT ($JWT_PARTS parts instead of 3)"
+          fi
+          
+          # Тестируем разные версии API
+          echo ""
+          echo "3. Testing API endpoints..."
+          
+          # Версия 1: Как в вашем скрипте
+          echo ""
+          echo "   Testing API v1 (as in userscript)..."
+          PAYLOAD1='{
+            "gain_type": "xp",
+            "amount": 30000
+          }'
+          
+          echo "   Payload: $PAYLOAD1"
+          RESPONSE1=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -H "User-Agent: Duolingo-PRO/3.1BETA.03" \
-            -d '{"gain_type":"xp","amount":30000}')
+            -d "$PAYLOAD1" \
+            -w "\n%{http_code}")
           
-          echo "Response 1: $RESPONSE1"
+          HTTP_CODE1=$(echo "$RESPONSE1" | tail -n1)
+          BODY1=$(echo "$RESPONSE1" | head -n -1)
           
-          if echo "$RESPONSE1" | grep -q '"status":true'; then
-            echo "✅ Format 1 worked!"
-            exit 0
-          fi
+          echo "   HTTP Code: $HTTP_CODE1"
+          echo "   Response: $BODY1"
           
+          # Версия 2: Другой формат
           echo ""
-          echo "Testing request format 2..."
-          RESPONSE2=$(curl -s -X POST "https://api.duolingopro.net/request" \
+          echo "   Testing API v2 (alternative format)..."
+          PAYLOAD2='{
+            "type": "xp",
+            "amount": 30000,
+            "version": "3.1BETA.03"
+          }'
+          
+          echo "   Payload: $PAYLOAD2"
+          RESPONSE2=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"type":"xp","amount":30000,"version":"3.1BETA.03"}')
+            -d "$PAYLOAD2" \
+            -w "\n%{http_code}")
           
-          echo "Response 2: $RESPONSE2"
+          HTTP_CODE2=$(echo "$RESPONSE2" | tail -n1)
+          BODY2=$(echo "$RESPONSE2" | head -n -1)
           
-          if echo "$RESPONSE2" | grep -q '"status":true'; then
-            echo "✅ Format 2 worked!"
-            exit 0
-          fi
+          echo "   HTTP Code: $HTTP_CODE2"
+          echo "   Response: $BODY2"
           
+          # Версия 3: Только XP
           echo ""
-          echo "Testing request format 3..."
-          RESPONSE3=$(curl -s -X POST "https://api.duolingopro.net/request" \
+          echo "   Testing API v3 (simple xp)..."
+          PAYLOAD3='{
+            "type": "xp",
+            "amount": 1000
+          }'
+          
+          echo "   Payload: $PAYLOAD3"
+          RESPONSE3=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"gain_type":"xp","amount":30000,"version":"3.1BETA.03","source":"github"}')
+            -d "$PAYLOAD3" \
+            -w "\n%{http_code}")
           
-          echo "Response 3: $RESPONSE3"
+          HTTP_CODE3=$(echo "$RESPONSE3" | tail -n1)
+          BODY3=$(echo "$RESPONSE3" | head -n -1)
           
-          if echo "$RESPONSE3" | grep -q '"status":true'; then
-            echo "✅ Format 3 worked!"
-            exit 0
+          echo "   HTTP Code: $HTTP_CODE3"
+          echo "   Response: $BODY3"
+          
+          # Тестируем эндпоинт сервера для проверки версии
+          echo ""
+          echo "4. Testing server endpoint..."
+          SERVER_RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/server \
+            -H "Content-Type: application/json" \
+            -d '{"version": "3.1BETA.03", "key": "test"}' \
+            -w "\n%{http_code}")
+          
+          SERVER_CODE=$(echo "$SERVER_RESPONSE" | tail -n1)
+          SERVER_BODY=$(echo "$SERVER_RESPONSE" | head -n -1)
+          
+          echo "   HTTP Code: $SERVER_CODE"
+          echo "   Server status: $(echo "$SERVER_BODY" | jq -r '.versions["3.1BETA.03"].status // "unknown"' 2>/dev/null || echo "Cannot parse")"
+          
+          # Анализируем результаты
+          echo ""
+          echo "=== Analysis ==="
+          
+          SUCCESS=false
+          for code in "$HTTP_CODE1" "$HTTP_CODE2" "$HTTP_CODE3"; do
+            if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+              SUCCESS=true
+              echo "✅ Found successful request with code: $code"
+            fi
+          done
+          
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ No successful requests. Most likely issues:"
+            echo "   1. Token is expired or invalid"
+            echo "   2. API endpoint changed"
+            echo "   3. Server is down"
+            echo "   4. Rate limiting"
+            
+            # Проверяем на 403 - запрещено
+            if [[ "$HTTP_CODE1" == "403" ]] || [[ "$HTTP_CODE2" == "403" ]] || [[ "$HTTP_CODE3" == "403" ]]; then
+              echo ""
+              echo "⚠️  Received 403 Forbidden. This usually means:"
+              echo "   - Token has expired (JWT tokens expire)"
+              echo "   - Token was revoked"
+              echo "   - IP address is blocked"
+              echo "   - User agent is blocked"
+              
+              echo ""
+              echo "🔧 Solution: Get a fresh JWT token from Duolingo:"
+              echo "   1. Login to Duolingo in browser"
+              echo "   2. Open DevTools (F12)"
+              echo "   3. Go to Application/Storage → Cookies"
+              echo "   4. Find 'jwt_token' cookie"
+              echo "   5. Copy its VALUE (not name)"
+              echo "   6. Update DUOLINGO_TOKEN secret in GitHub"
+            fi
+            
+            exit 1
+          else
+            echo ""
+            echo "🎉 Success! XP automation is working!"
+            echo "You can now reduce the debug output and keep only the working payload."
           fi
           
-          # Все форматы не сработали
           echo ""
-          echo "❌ All formats failed!"
-          echo "Most likely token is expired."
-          echo ""
-          echo "To get new token:"
-          echo "1. Login to Duolingo in browser"
-          echo "2. Press F12 → Application tab"
-          echo "3. Cookies → https://www.duolingo.com"
-          echo "4. Find 'jwt_token' cookie"
-          echo "5. Copy VALUE (not name)"
-          echo "6. Update DUOLINGO_TOKEN in GitHub secrets"
-          
-          exit 1
+          echo "=== Script finished at: $(date) ==="
