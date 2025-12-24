@@ -2,8 +2,8 @@ name: Super Automation
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Every day at 00:00 UTC!
-  workflow_dispatch:  # Allow manual run too
+    - cron: '0 0 * * *'  # Каждый день в полночь (UTC)
+  workflow_dispatch:        # Ручной запуск
 
 permissions:
   contents: read
@@ -13,14 +13,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Send Super Request
+      - name: Request 3 Days of Super
         run: |
-          echo "🚀 Requesting Super..."
-          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          echo "🚀 Starting Super automation..."
+          sleep 5
+          
+          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$TOKEN" ]; then
+            echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
+            exit 1
+          fi
+          
+          echo "📤 Requesting 3 Days of Super..."
+          
+          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"gain_type": "super", "amount": 1}')
-          echo "📝 Response from server:"
-          echo "$RESPONSE"
+            -H "Accept: text/event-stream" \
+            -d '{"type": "super", "amount": 1, "version": "3.1BETA.03"}')
+          
+          # Берем последнюю строку ответа
+          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
+          
+          echo "📋 Server response received"
+          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
+          
+          # Простая проверка - если есть response, считаем успехом
+          if [ -n "$LAST_LINE" ]; then
+            if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
+              echo "🎉 SUCCESS: 3 Days of Super added!"
+            elif echo "$LAST_LINE" | grep -q '"status": false'; then
+              echo "⏳ INFO: Daily limit reached (normal - try again tomorrow)"
+            else
+              echo "⚠️  Response received (check above for details)"
+            fi
+            echo "✅ Automation completed"
+          else
+            echo "❌ ERROR: No response from server"
+            exit 1
+          fi
+          
+          echo "⏰ Next run: $(date -u -d 'tomorrow 00:00' '+%Y-%m-%d %H:%M UTC')"
+
+      - name: Log completion
+        run: |
+          echo "📝 Super automation ran at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
