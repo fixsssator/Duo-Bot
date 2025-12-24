@@ -1,53 +1,72 @@
 name: XP Automation
 
-on:
-  schedule:
-    - cron: '5 */4 * * *'
-  workflow_dispatch:
+on: workflow_dispatch
 
 jobs:
-  send-xp:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug token availability
+      - name: Install dependencies
+        run: sudo apt-get install -y jq curl
+        
+      - name: Comprehensive API Test
         run: |
-          if [ -z "${{ secrets.DUOLINGO_TOKEN }}" ]; then
-            echo "❌ DUOLINGO_TOKEN secret is empty or not set"
-            exit 1
-          else
-            echo "✅ Token is set (first 10 chars): ${DUOLINGO_TOKEN:0:10}..."
-          fi
-        env:
-          DUOLINGO_TOKEN: ${{ secrets.DUOLINGO_TOKEN }}
-      
-      - name: Test API with different formats
-        run: |
-          echo "🧪 Testing API endpoint..."
+          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           
-          # Test 1: Original format
-          echo "Test 1: Original format"
-          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          echo "=== TEST SET 1: Different Auth Headers ==="
+          
+          # Test 1: Bearer token (standard)
+          echo "Test 1.1: Bearer token"
+          curl -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"gain_type": "xp", "amount": 30000}' \
-            -w "\nStatus: %{http_code}\n"
+            -w " | HTTP: %{http_code}\n"
           
-          sleep 2
-          
-          # Test 2: Alternative format
-          echo -e "\nTest 2: Alternative format"
-          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          # Test 2: Token without "Bearer"
+          echo -e "\nTest 1.2: Token only"
+          curl -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"action": "add_xp", "value": 30000}' \
-            -w "\nStatus: %{http_code}\n"
+            -d '{"gain_type": "xp", "amount": 30000}' \
+            -w " | HTTP: %{http_code}\n"
           
-          sleep 2
-          
-          # Test 3: Different endpoint
-          echo -e "\nTest 3: Different endpoint"
-          curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/v1/gain-xp \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          # Test 3: X-Authorization header
+          echo -e "\nTest 1.3: X-Authorization"
+          curl -s -X POST https://api.duolingopro.net/request \
+            -H "X-Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"xp": 30000}' \
-            -w "\nStatus: %{http_code}\n"
+            -d '{"gain_type": "xp", "amount": 30000}' \
+            -w " | HTTP: %{http_code}\n"
+          
+          echo -e "\n=== TEST SET 2: Different Payloads ==="
+          
+          # Test with user_id from JWT
+          USER_ID=$(echo "$TOKEN" | cut -d '.' -f 2 | base64 --decode 2>/dev/null | jq -r '.sub // .user_id // "unknown"')
+          
+          echo "Test 2.1: With user_id ($USER_ID)"
+          curl -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"gain_type\": \"xp\", \"amount\": 30000, \"user_id\": \"$USER_ID\"}" \
+            -w " | HTTP: %{http_code}\n"
+          
+          echo -e "\nTest 2.2: Minimal payload"
+          curl -s -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"action": "xp"}' \
+            -w " | HTTP: %{http_code}\n"
+          
+          echo -e "\n=== TEST SET 3: Check API base ==="
+          
+          echo "Test 3.1: GET request to check API"
+          curl -s https://api.duolingopro.net/ \
+            -H "Authorization: Bearer $TOKEN" \
+            -w " | HTTP: %{http_code}\n"
+          
+          echo -e "\nTest 3.2: Check /health or /status"
+          curl -s https://api.duolingopro.net/health \
+            -w " | HTTP: %{http_code}\n"
+          curl -s https://api.duolingopro.net/status \
+            -w " | HTTP: %{http_code}\n"
