@@ -2,18 +2,18 @@ name: XP Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'  # Runs every 4 hours at minute 5 (UTC)
-  workflow_dispatch:        # Allows manual triggering
+    - cron: '5 */4 * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: read  # Least-privilege permissions for GITHUB_TOKEN
+  contents: read
 
 jobs:
   send-xp:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3  # Обновлено с v2 до v3
+        uses: actions/checkout@v3
 
       - name: Run XP request
         run: |
@@ -21,30 +21,27 @@ jobs:
           sleep 10
           echo "📤 Sending XP request..."
           
-          # Проверяем наличие токена
-          if [ -z "${{ secrets.DUOLINGO_TOKEN }}" ]; then
+          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          
+          if [ -z "$TOKEN" ]; then
             echo "❌ Error: DUOLINGO_TOKEN secret is not set"
             exit 1
           fi
           
-          # Отправляем запрос с таймаутом и проверкой статуса
-          RESPONSE=$(curl --ssl-no-revoke -s -w "%{http_code}" -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          # Используем формат из вашего пользовательского скрипта
+          PAYLOAD='{
+            "type": "xp",
+            "amount": 30000,
+            "version": "3.1BETA.03"
+          }'
+          
+          echo "Using token length: ${#TOKEN} characters"
+          echo "Payload: $PAYLOAD"
+          
+          # Отправляем с подробным логированием
+          curl -v --ssl-no-revoke -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"gain_type": "xp", "amount": 30000}')
-          
-          # Разделяем ответ и код статуса
-          HTTP_STATUS=${RESPONSE: -3}
-          RESPONSE_BODY=${RESPONSE%???}
-          
-          echo "📨 HTTP Status: $HTTP_STATUS"
-          echo "📨 Response from server:"
-          echo "$RESPONSE_BODY"
-          
-          # Проверяем успешность запроса
-          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "✅ XP request successful"
-          else
-            echo "❌ XP request failed with status $HTTP_STATUS"
-            exit 1
-          fi
+            -H "Accept: application/json" \
+            -d "$PAYLOAD" \
+            --write-out "\nHTTP Status: %{http_code}\n"
