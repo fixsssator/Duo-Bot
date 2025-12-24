@@ -2,8 +2,8 @@ name: Super Automation
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Every day at 00:00 UTC!
-  workflow_dispatch:  # Allow manual run too
+    - cron: '0 0 * * *'  # Каждый день в полночь (UTC)
+  workflow_dispatch:        # Ручной запуск
 
 permissions:
   contents: read
@@ -13,14 +13,104 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Send Super Request
+      - name: Request Super from Duolingo PRO
         run: |
-          echo "🚀 Requesting Super..."
-          RESPONSE=$(curl --ssl-no-revoke -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
+          echo "🚀 Starting Super automation..."
+          echo "⏳ Waiting 10 seconds before request..."
+          sleep 10
+          
+          # Проверяем токен
+          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$TOKEN" ]; then
+            echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
+            echo "Please add your JWT token to GitHub Secrets"
+            exit 1
+          fi
+          
+          echo "📤 Sending Super request (1 month)..."
+          
+          # Создаем корректный payload для Super
+          PAYLOAD='{
+            "type": "super",
+            "amount": 1,
+            "version": "3.1BETA.03"
+          }'
+          
+          echo "🔄 Processing request (this may take a moment)..."
+          
+          # Отправляем запрос с обработкой SSE (Server-Sent Events)
+          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"gain_type": "super", "amount": 1}')
-          echo "📝 Response from server:"
-          echo "$RESPONSE"
+            -H "Accept: text/event-stream" \
+            -d "$PAYLOAD")
+          
+          # Проверяем, что получили ответ
+          if [ -z "$RESPONSE" ]; then
+            echo "❌ ERROR: No response from server"
+            exit 1
+          fi
+          
+          echo "📝 Raw response received"
+          
+          # Парсим последний JSON из потока SSE
+          LAST_LINE=$(echo "$RESPONSE" | grep -E '^data:' | tail -n1 | sed 's/^data: //')
+          
+          if [ -z "$LAST_LINE" ]; then
+            LAST_LINE="$RESPONSE"
+          fi
+          
+          echo "📋 Parsed response: $LAST_LINE"
+          
+          # Проверяем статус
+          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
+            # Извлекаем сообщение об успехе
+            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            SUPER_DAYS=$(echo "$LAST_LINE" | sed -n 's/.*Super for \([0-9]*\) days.*/\1/p')
+            
+            if [ -n "$SUPER_MSG" ]; then
+              echo "✅ $SUCCESS_MSG"
+            else
+              echo "✅ Request completed successfully!"
+            fi
+            
+            if [ -n "$SUPER_DAYS" ]; then
+              echo "🎉 Successfully received Super for $SUPER_DAYS days!"
+            else
+              echo "🎉 Successfully received Super subscription!"
+            fi
+            
+            # Извлекаем дополнительную информацию
+            BODY_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+            if [ -n "$BODY_INFO" ]; then
+              echo "📊 $BODY_INFO"
+            fi
+            
+            echo "⏰ Next Super request available tomorrow"
+            
+          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
+            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            if [ -n "$ERROR_MSG" ]; then
+              echo "❌ Request failed: $ERROR_MSG"
+            else
+              echo "❌ Request failed with unknown error"
+            fi
+            exit 1
+          elif echo "$LAST_LINE" | grep -q 'rate limit'; then
+            echo "⏳ Rate limited. Please try again later."
+            exit 1
+          else
+            echo "⚠️  Unexpected response format:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          
+          echo "✨ Super automation completed successfully!"
+
+      - name: Log completion
+        run: |
+          echo "📝 Logging completion..."
+          echo "Super request completed at: $(date -u)"
+          echo "Next scheduled run: tomorrow at 00:00 UTC"
