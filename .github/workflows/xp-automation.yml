@@ -2,8 +2,8 @@ name: XP Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'
-  workflow_dispatch:
+    - cron: '5 */4 * * *'  # Каждые 4 часа в 5-й минуте (UTC)
+  workflow_dispatch:        # Ручной запуск
 
 permissions:
   contents: read
@@ -15,33 +15,70 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Run XP request
+      - name: Request XP from Duolingo PRO
         run: |
-          echo "⏳ Waiting 10 seconds..."
+          echo "🚀 Starting XP automation..."
+          echo "⏳ Waiting 10 seconds before request..."
           sleep 10
-          echo "📤 Sending XP request..."
           
+          # Проверяем токен
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
-          
           if [ -z "$TOKEN" ]; then
-            echo "❌ Error: DUOLINGO_TOKEN secret is not set"
+            echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
+            echo "Please add your JWT token to GitHub Secrets"
             exit 1
           fi
           
-          # Используем формат из вашего пользовательского скрипта
+          echo "📤 Sending XP request (30,000 XP)..."
+          
+          # Создаем корректный payload
           PAYLOAD='{
             "type": "xp",
             "amount": 30000,
             "version": "3.1BETA.03"
           }'
           
-          echo "Using token length: ${#TOKEN} characters"
-          echo "Payload: $PAYLOAD"
+          # Отправляем запрос с обработкой SSE (Server-Sent Events)
+          echo "🔄 Processing request (this may take a moment)..."
           
-          # Отправляем с подробным логированием
-          curl -v --ssl-no-revoke -X POST https://api.duolingopro.net/request \
+          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$PAYLOAD" \
-            --write-out "\nHTTP Status: %{http_code}\n"
+            -H "Accept: text/event-stream" \
+            -d "$PAYLOAD")
+          
+          # Парсим последний JSON из потока SSE
+          LAST_LINE=$(echo "$RESPONSE" | tail -n1)
+          
+          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
+            # Извлекаем сообщение об успехе
+            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            XP_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*You received \([0-9]*\) XP.*/\1/p')
+            
+            echo "✅ $SUCCESS_MSG"
+            echo "🎉 Successfully received $XP_AMOUNT XP!"
+            
+            # Извлекаем информацию о лимите
+            LIMIT_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+            echo "📊 $LIMIT_INFO"
+            
+            # Отправляем уведомление (опционально)
+            echo "⏰ Next request available in 4 hours"
+            
+          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
+            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            echo "❌ Request failed: $ERROR_MSG"
+            exit 1
+          else
+            echo "⚠️  Unexpected response format:"
+            echo "$LAST_LINE"
+            exit 1
+          fi
+          
+          echo "✨ XP automation completed successfully!"
+
+      - name: Log completion
+        run: |
+          echo "📝 Logging completion..."
+          echo "XP request completed at: $(date)"
+          echo "Next scheduled run: 4 hours from now"
