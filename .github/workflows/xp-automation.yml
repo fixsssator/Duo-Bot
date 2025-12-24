@@ -20,7 +20,6 @@ jobs:
           echo "=== Starting XP Automation ==="
           echo "Time: $(date)"
           
-          # Получаем токен
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           
           if [ -z "$TOKEN" ]; then
@@ -28,37 +27,63 @@ jobs:
             exit 1
           fi
           
-          echo "Sending XP request..."
+          echo "Token check (first 30 chars): ${TOKEN:0:30}..."
           
-          # Используем точную конфигурацию из работающего скрипта
-          RESPONSE=$(curl -s -X POST "https://api.duolingopro.net/request" \
+          # Тестируем разные форматы запросов
+          echo ""
+          echo "Testing request format 1..."
+          RESPONSE1=$(curl -s -X POST "https://api.duolingopro.net/request" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -H "User-Agent: Duolingo-PRO/3.1BETA.03" \
             -d '{"gain_type":"xp","amount":30000}')
           
-          echo "Response: $RESPONSE"
+          echo "Response 1: $RESPONSE1"
           
-          # Проверяем успешность
-          if echo "$RESPONSE" | grep -q '"status":true'; then
-            echo "✅ Success! XP sent successfully."
-          elif echo "$RESPONSE" | grep -q '"status":false'; then
-            echo "❌ Failed: $(echo $RESPONSE | jq -r '.notification.body // "Unknown error"' 2>/dev/null || echo $RESPONSE)"
-            
-            # Проверяем конкретную ошибку #2
-            if echo "$RESPONSE" | grep -q 'Invalid request format. #2'; then
-              echo ""
-              echo "⚠️  Error #2: Invalid request format"
-              echo "Possible solutions:"
-              echo "1. Token expired - get new JWT token from Duolingo cookies"
-              echo "2. API changed - check if endpoint still works"
-            fi
-            exit 1
-          else
-            echo "⚠️  Unknown response format"
-            echo "$RESPONSE"
-            exit 1
+          if echo "$RESPONSE1" | grep -q '"status":true'; then
+            echo "✅ Format 1 worked!"
+            exit 0
           fi
           
           echo ""
-          echo "=== Finished at: $(date) ==="
+          echo "Testing request format 2..."
+          RESPONSE2=$(curl -s -X POST "https://api.duolingopro.net/request" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"type":"xp","amount":30000,"version":"3.1BETA.03"}')
+          
+          echo "Response 2: $RESPONSE2"
+          
+          if echo "$RESPONSE2" | grep -q '"status":true'; then
+            echo "✅ Format 2 worked!"
+            exit 0
+          fi
+          
+          echo ""
+          echo "Testing request format 3..."
+          RESPONSE3=$(curl -s -X POST "https://api.duolingopro.net/request" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"gain_type":"xp","amount":30000,"version":"3.1BETA.03","source":"github"}')
+          
+          echo "Response 3: $RESPONSE3"
+          
+          if echo "$RESPONSE3" | grep -q '"status":true'; then
+            echo "✅ Format 3 worked!"
+            exit 0
+          fi
+          
+          # Все форматы не сработали
+          echo ""
+          echo "❌ All formats failed!"
+          echo "Most likely token is expired."
+          echo ""
+          echo "To get new token:"
+          echo "1. Login to Duolingo in browser"
+          echo "2. Press F12 → Application tab"
+          echo "3. Cookies → https://www.duolingo.com"
+          echo "4. Find 'jwt_token' cookie"
+          echo "5. Copy VALUE (not name)"
+          echo "6. Update DUOLINGO_TOKEN in GitHub secrets"
+          
+          exit 1
