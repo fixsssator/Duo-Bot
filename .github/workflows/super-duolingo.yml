@@ -36,30 +36,52 @@ jobs:
             -d '{"type": "super", "amount": 1, "version": "3.1BETA.03"}')
           
           # Извлекаем финальный ответ
-          FINAL_RESPONSE=$(echo "$RESPONSE" | grep '"status": "completed"' | tail -n1 | sed 's/^data: //')
-          
-          if [ -z "$FINAL_RESPONSE" ]; then
-            FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
-          fi
+          FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           
           echo "📋 Server response:"
           echo "$FINAL_RESPONSE" | jq '.' 2>/dev/null || echo "$FINAL_RESPONSE"
           
+          # Проверяем разные варианты ответов
           if echo "$FINAL_RESPONSE" | grep -q '"status": "completed"'; then
-            echo "✅ Request successfully processed by server!"
-            echo "📅 Attempted to add: 3 Days of Super"
-            echo "💡 Note: Check your Duolingo account to confirm"
-            echo "🔄 Next attempt: Available in 1 day"
+            echo "✅ SUCCESS: Super request processed!"
+            echo "📅 3 Days of Super should be added to your account"
+            echo "💡 Check your Duolingo account to confirm"
+            
+          elif echo "$FINAL_RESPONSE" | grep -q '"status": false'; then
+            # Извлекаем информацию о лимите
+            HEAD=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            BODY=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+            MAX_AMOUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
+            
+            echo "⏳ LIMIT REACHED: $HEAD"
+            echo "📊 Details: $BODY"
+            
+            if [ "$MAX_AMOUNT" = "0" ]; then
+              echo "✅ INFO: Daily limit already used"
+              echo "🔄 Next Super request will be available in ~24 hours"
+              echo "⚠️  This is expected behavior - nothing is broken!"
+            else
+              echo "📈 Max available today: $MAX_AMOUNT"
+            fi
+            
+            # Не завершаем с ошибкой при лимите - это нормально
+            echo "✨ Automation completed (limit check)"
+            
+          elif echo "$FINAL_RESPONSE" | grep -q '"status": "failed"'; then
+            echo "❌ ERROR: Request failed"
+            exit 1
+            
           else
-            echo "❌ Request failed"
+            echo "⚠️  UNKNOWN RESPONSE FORMAT"
+            echo "$FINAL_RESPONSE"
             exit 1
           fi
           
-          echo "✨ Automation completed at: $(date -u '+%H:%M:%S UTC')"
+          echo "⏰ Timestamp: $(date -u '+%H:%M:%S UTC')"
 
       - name: Log completion
         run: |
-          echo "📝 Log entry: Super request attempted"
+          echo "📝 Log entry: Super automation completed"
           echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Status: Request sent to Duolingo PRO API"
-          echo "Action required: Verify in Duolingo app/website"
+          echo "Note: If limit was reached, this is expected behavior"
+          echo "Next scheduled run: Tomorrow at 00:00 UTC"
