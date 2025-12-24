@@ -1,38 +1,50 @@
 name: XP Automation
 
-on: workflow_dispatch
+on:
+  schedule:
+    - cron: '5 */4 * * *'  # Runs every 4 hours at minute 5 (UTC)
+  workflow_dispatch:        # Allows manual triggering
+
+permissions:
+  contents: read  # Least-privilege permissions for GITHUB_TOKEN
 
 jobs:
-  debug:
+  send-xp:
     runs-on: ubuntu-latest
     steps:
-      - name: Test all possible formats
+      - name: Checkout repository
+        uses: actions/checkout@v3  # Обновлено с v2 до v3
+
+      - name: Run XP request
         run: |
-          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
+          echo "⏳ Waiting 10 seconds..."
+          sleep 10
+          echo "📤 Sending XP request..."
           
-          # Format 1: Simple
-          echo "Format 1: Simple"
-          curl -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"xp": 10}'
+          # Проверяем наличие токена
+          if [ -z "${{ secrets.DUOLINGO_TOKEN }}" ]; then
+            echo "❌ Error: DUOLINGO_TOKEN secret is not set"
+            exit 1
+          fi
           
-          # Format 2: With action
-          echo -e "\nFormat 2: With action"
-          curl -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
+          # Отправляем запрос с таймаутом и проверкой статуса
+          RESPONSE=$(curl --ssl-no-revoke -s -w "%{http_code}" -X POST https://api.duolingopro.net/request \
+            -H "Authorization: Bearer ${{ secrets.DUOLINGO_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"action": "gainXP", "value": 10}'
+            -d '{"gain_type": "xp", "amount": 30000}')
           
-          # Format 3: Array format
-          echo -e "\nFormat 3: Array format"
-          curl -s -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '[{"method": "xp.gain", "params": [10]}]'
+          # Разделяем ответ и код статуса
+          HTTP_STATUS=${RESPONSE: -3}
+          RESPONSE_BODY=${RESPONSE%???}
           
-          # Format 4: Try different endpoint
-          echo -e "\nFormat 4: Different endpoint"
-          curl -s -X POST https://api.duolingopro.net/api/v1/xp \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"amount": 10}'
+          echo "📨 HTTP Status: $HTTP_STATUS"
+          echo "📨 Response from server:"
+          echo "$RESPONSE_BODY"
+          
+          # Проверяем успешность запроса
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ XP request successful"
+          else
+            echo "❌ XP request failed with status $HTTP_STATUS"
+            exit 1
+          fi
