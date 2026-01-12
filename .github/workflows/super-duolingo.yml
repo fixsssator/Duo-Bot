@@ -18,7 +18,8 @@ jobs:
       - name: Request 3 Days of Super
         run: |
           echo "🚀 Starting Super automation..."
-          sleep 5
+          echo "⏳ Waiting 10 seconds before request..."
+          sleep 10
           
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           if [ -z "$TOKEN" ]; then
@@ -28,35 +29,91 @@ jobs:
           
           echo "📤 Requesting 3 Days of Super..."
           
+          # Создаем корректный payload с указанием языка (японский - ja)
+          PAYLOAD='{
+            "type": "super",
+            "amount": 1,
+            "version": "3.1BETA.03",
+            "lang": "ja"
+          }'
+          
           RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
-            -d '{"type": "super", "amount": 1, "version": "3.1BETA.03"}')
+            -d "$PAYLOAD")
           
-          # Берем последнюю строку ответа
-          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
+          # Извлекаем финальный ответ
+          FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           
-          echo "📋 Server response received"
-          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
-          
-          # Простая проверка - если есть response, считаем успехом
-          if [ -n "$LAST_LINE" ]; then
-            if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-              echo "🎉 SUCCESS: 3 Days of Super added!"
-            elif echo "$LAST_LINE" | grep -q '"status": false'; then
-              echo "⏳ INFO: Daily limit reached (normal - try again tomorrow)"
-            else
-              echo "⚠️  Response received (check above for details)"
-            fi
-            echo "✅ Automation completed"
-          else
-            echo "❌ ERROR: No response from server"
-            exit 1
+          # Если не удалось извлечь, используем весь ответ
+          if [ -z "$FINAL_RESPONSE" ]; then
+            FINAL_RESPONSE="$RESPONSE"
           fi
           
-          echo "⏰ Next run: $(date -u -d 'tomorrow 00:00' '+%Y-%m-%d %H:%M UTC')"
+          echo "📋 Server response:"
+          echo "$FINAL_RESPONSE" | jq '.' 2>/dev/null || echo "$FINAL_RESPONSE"
+          
+          # Проверяем разные варианты ответов
+          if echo "$FINAL_RESPONSE" | grep -q '"status": "completed"'; then
+            # Извлекаем детали из notification
+            HEAD=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            BODY=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+            
+            echo "✅ SUCCESS: Request completed!"
+            if [ -n "$HEAD" ]; then
+              echo "📢 $HEAD"
+            fi
+            if [ -n "$BODY" ]; then
+              echo "📝 $BODY"
+            fi
+            
+            # Проверяем, действительно ли Super был добавлен
+            if echo "$FINAL_RESPONSE" | grep -qi "attempted" || echo "$FINAL_RESPONSE" | grep -qi "may not have worked"; then
+              echo "⚠️  Note: Check your Duolingo account to confirm Super status"
+            else
+              echo "🎉 3 Days of Super should be active!"
+            fi
+            
+          elif echo "$FINAL_RESPONSE" | grep -q '"status": false'; then
+            # Обрабатываем лимит
+            HEAD=$(echo "$FINAL_RESPONSE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
+            BODY=$(echo "$FINAL_RESPONSE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
+            MAX_AMOUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
+            
+            echo "⏳ LIMIT REACHED: $HEAD"
+            echo "📊 Details: $BODY"
+            
+            if [ "$MAX_AMOUNT" = "0" ]; then
+              echo "✅ INFO: Daily limit already used - expected behavior"
+              echo "🔄 Next Super request will be available tomorrow at 00:00 UTC"
+            fi
+            
+          elif echo "$FINAL_RESPONSE" | grep -q '"status": "failed"'; then
+            ERROR_MSG=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            echo "❌ ERROR: Request failed"
+            if [ -n "$ERROR_MSG" ]; then
+              echo "📝 Details: $ERROR_MSG"
+            fi
+            exit 1
+            
+          else
+            # Если получили ответ, но не распознали формат
+            if [ -n "$FINAL_RESPONSE" ]; then
+              echo "⚠️  Response received (check above for details)"
+              echo "ℹ️  Continuing execution..."
+            else
+              echo "❌ ERROR: No response from server"
+              exit 1
+            fi
+          fi
+          
+          echo "✨ Super automation completed at: $(date -u '+%H:%M:%S UTC')"
+          echo "⏰ Next scheduled run: $(date -u -d 'tomorrow 00:00' '+%Y-%m-%d %H:%M UTC')"
 
       - name: Log completion
         run: |
-          echo "📝 Super automation ran at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "📝 Log entry: Super automation ran"
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Status: Request processed"
+          echo "Next automatic run: Tomorrow at 00:00 UTC"
