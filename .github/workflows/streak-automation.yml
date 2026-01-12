@@ -31,11 +31,12 @@ jobs:
           
           echo "📤 Sending streak request (10 streak)..."
           
-          # Создаем корректный payload
+          # Создаем корректный payload с указанием языка (японский - ja)
           PAYLOAD='{
             "type": "streak",
             "amount": 10,
-            "version": "3.1BETA.03"
+            "version": "3.1BETA.03",
+            "lang": "ja"
           }'
           
           echo "🔄 Processing request (this may take a moment)..."
@@ -61,11 +62,12 @@ jobs:
           # Проверяем статус ответа
           if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
             # Извлекаем сообщение об успехе
-            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            HEAD=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
+            BODY=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
             STREAK_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*received \([0-9]*\) streak.*/\1/p')
             
-            if [ -n "$SUCCESS_MSG" ]; then
-              echo "✅ $SUCCESS_MSG"
+            if [ -n "$HEAD" ]; then
+              echo "✅ $HEAD"
             else
               echo "✅ Request completed successfully!"
             fi
@@ -76,32 +78,48 @@ jobs:
               echo "🔥 Successfully extended your streak!"
             fi
             
-            # Извлекаем дополнительную информацию
-            BODY_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            if [ -n "$BODY_INFO" ]; then
-              echo "📊 $BODY_INFO"
+            # Выводим дополнительную информацию
+            if [ -n "$BODY" ]; then
+              echo "📊 $BODY"
+              
+              # Извлекаем информацию о следующем доступном запросе
+              if echo "$BODY" | grep -q "request up to"; then
+                NEXT_TIME=$(echo "$BODY" | sed -n 's/.*resets back to [0-9]* Streaks in \([^.]*\).*/\1/p')
+                if [ -n "$NEXT_TIME" ]; then
+                  echo "🔄 Next streak request available in $NEXT_TIME"
+                fi
+              fi
             fi
-            
-            echo "⏰ Next request available in 4 hours"
             
           elif echo "$LAST_LINE" | grep -q '"status": false'; then
             # Обрабатываем лимит (как в случае с Super)
             HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
             BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
+            MAX_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
             
             echo "⏳ LIMIT REACHED: $HEAD"
             echo "📊 Details: $BODY"
-            echo "✅ INFO: Daily limit already used - this is expected"
-            echo "🔄 Next streak request will be available according to the limit"
+            
+            if [ "$MAX_AMOUNT" = "0" ]; then
+              echo "✅ INFO: Daily limit already used - expected behavior"
+              echo "🔄 Next streak request according to limit schedule"
+            else
+              echo "📈 You can request up to $MAX_AMOUNT streak(s)"
+            fi
             
           elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
             ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            echo "❌ Request failed: $ERROR_MSG"
+            echo "❌ Request failed"
+            if [ -n "$ERROR_MSG" ]; then
+              echo "📝 Details: $ERROR_MSG"
+            fi
             exit 1
+            
           else
             # Если получили ответ, но не распознали формат
             if [ -n "$LAST_LINE" ]; then
-              echo "⚠️  Received response (check above for details)"
+              echo "⚠️  Response received (check above for details)"
+              echo "ℹ️  Continuing execution..."
             else
               echo "❌ ERROR: No response from server"
               exit 1
@@ -109,6 +127,7 @@ jobs:
           fi
           
           echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
+          echo "⏰ Next scheduled run: $(date -u -d '4 hours' '+%Y-%m-%d %H:%M UTC')"
 
       - name: Log completion
         run: |
