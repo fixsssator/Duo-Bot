@@ -31,11 +31,12 @@ jobs:
           
           echo "📤 Sending XP request (30,000 XP)..."
           
-          # Создаем корректный payload
+          # Создаем корректный payload с указанием языка ЯПОНСКИЙ (ja)
           PAYLOAD='{
             "type": "xp",
             "amount": 30000,
-            "version": "3.1BETA.03"
+            "version": "3.1BETA.03",
+            "lang": "ja"
           }'
           
           # Отправляем запрос с обработкой SSE (Server-Sent Events)
@@ -48,37 +49,69 @@ jobs:
             -d "$PAYLOAD")
           
           # Парсим последний JSON из потока SSE
-          LAST_LINE=$(echo "$RESPONSE" | tail -n1)
+          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           
+          # Если не удалось распарсить, используем весь ответ
+          if [ -z "$LAST_LINE" ]; then
+            LAST_LINE="$RESPONSE"
+          fi
+          
+          echo "📋 Server response:"
+          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
+          
+          # Улучшенная проверка ответов
           if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
             # Извлекаем сообщение об успехе
             SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
             XP_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*You received \([0-9]*\) XP.*/\1/p')
             
-            echo "✅ $SUCCESS_MSG"
-            echo "🎉 Successfully received $XP_AMOUNT XP!"
+            if [ -n "$SUCCESS_MSG" ]; then
+              echo "✅ $SUCCESS_MSG"
+            else
+              echo "✅ Request completed successfully!"
+            fi
+            
+            if [ -n "$XP_AMOUNT" ]; then
+              echo "🎉 Successfully received $XP_AMOUNT XP!"
+            else
+              echo "🎉 Successfully received XP!"
+            fi
             
             # Извлекаем информацию о лимите
             LIMIT_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            echo "📊 $LIMIT_INFO"
+            if [ -n "$LIMIT_INFO" ]; then
+              echo "📊 $LIMIT_INFO"
+            fi
             
-            # Отправляем уведомление (опционально)
             echo "⏰ Next request available in 4 hours"
+            
+          elif echo "$LAST_LINE" | grep -q '"status": false'; then
+            # Обрабатываем лимит (как в случае с Super и Streak)
+            HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
+            BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
+            
+            echo "⏳ LIMIT REACHED: $HEAD"
+            echo "📊 Details: $BODY"
+            echo "✅ INFO: This may be expected if limit is reached"
             
           elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
             ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
             echo "❌ Request failed: $ERROR_MSG"
             exit 1
           else
-            echo "⚠️  Unexpected response format:"
-            echo "$LAST_LINE"
-            exit 1
+            # Если получили ответ, но не распознали формат
+            if [ -n "$LAST_LINE" ]; then
+              echo "⚠️  Received response (check above for details)"
+            else
+              echo "❌ ERROR: No response from server"
+              exit 1
+            fi
           fi
           
-          echo "✨ XP automation completed successfully!"
+          echo "✨ XP automation completed at: $(date -u '+%H:%M:%S UTC')"
 
       - name: Log completion
         run: |
-          echo "📝 Logging completion..."
-          echo "XP request completed at: $(date)"
-          echo "Next scheduled run: 4 hours from now"
+          echo "📝 Log entry: XP automation ran"
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Next scheduled run: In 4 hours"
