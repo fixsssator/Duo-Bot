@@ -15,6 +15,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Install jq (JSON processor)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Request Streak from Duolingo PRO
         run: |
           echo "🔥 Starting Streak automation..."
@@ -81,31 +84,16 @@ jobs:
             # Выводим дополнительную информацию
             if [ -n "$BODY" ]; then
               echo "📊 $BODY"
-              
-              # Извлекаем информацию о следующем доступном запросе
-              if echo "$BODY" | grep -q "request up to"; then
-                NEXT_TIME=$(echo "$BODY" | sed -n 's/.*resets back to [0-9]* Streaks in \([^.]*\).*/\1/p')
-                if [ -n "$NEXT_TIME" ]; then
-                  echo "🔄 Next streak request available in $NEXT_TIME"
-                fi
-              fi
             fi
             
           elif echo "$LAST_LINE" | grep -q '"status": false'; then
             # Обрабатываем лимит (как в случае с Super)
             HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
             BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
-            MAX_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
             
             echo "⏳ LIMIT REACHED: $HEAD"
             echo "📊 Details: $BODY"
-            
-            if [ "$MAX_AMOUNT" = "0" ]; then
-              echo "✅ INFO: Daily limit already used - expected behavior"
-              echo "🔄 Next streak request according to limit schedule"
-            else
-              echo "📈 You can request up to $MAX_AMOUNT streak(s)"
-            fi
+            echo "✅ INFO: Daily limit already used - expected behavior"
             
           elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
             ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
@@ -127,10 +115,8 @@ jobs:
           fi
           
           echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
-          echo "⏰ Next scheduled run: $(date -u -d '4 hours' '+%Y-%m-%d %H:%M UTC')"
 
       - name: Log completion
         run: |
           echo "📝 Log entry: Streak automation ran"
           echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Next scheduled run: In 4 hours"
