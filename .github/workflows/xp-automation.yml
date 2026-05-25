@@ -1,5 +1,8 @@
 name: XP Automation
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   schedule:
     - cron: '5 */4 * * *'  # Каждые 4 часа в 5-й минуте (UTC)
@@ -13,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Request XP from Duolingo PRO
         run: |
@@ -109,7 +112,7 @@ jobs:
           fi
           
           echo "✨ XP automation completed at: $(date -u '+%H:%M:%S UTC')"
-
+          
       - name: Log completion
         run: |
           echo "📝 Log entry: XP automation ran"
