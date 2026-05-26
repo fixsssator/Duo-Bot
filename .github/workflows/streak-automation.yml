@@ -1,5 +1,8 @@
 name: Streak Automation
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # Принудительно используем Node.js 24
+
 on:
   schedule:
     - cron: '10 */4 * * *'  # Каждые 4 часа в 10-й минуте (UTC)
