@@ -1,8 +1,5 @@
 name: XP Automation
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   schedule:
     - cron: '5 */4 * * *'  # Каждые 4 часа в 5-й минуте (UTC)
@@ -28,22 +25,20 @@ jobs:
           TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
           if [ -z "$TOKEN" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
-            echo "Please add your JWT token to GitHub Secrets"
             exit 1
           fi
           
-          echo "📤 Sending XP request (30,000 XP)..."
+          echo "📤 Sending XP request (10,000 XP)..."
           
-          # Создаем корректный payload с указанием языка ЯПОНСКИЙ (ja)
+          # ИСПРАВЛЕНО: Уменьшено до 10,000 XP (максимально допустимое значение)
           PAYLOAD='{
             "type": "xp",
-            "amount": 30000,
+            "amount": 10000,
             "version": "3.1BETA.03",
             "lang": "ja"
           }'
           
-          # Отправляем запрос с обработкой SSE (Server-Sent Events)
-          echo "🔄 Processing request (this may take a moment)..."
+          echo "🔄 Processing request..."
           
           RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
             -H "Authorization: Bearer $TOKEN" \
@@ -54,7 +49,6 @@ jobs:
           # Парсим последний JSON из потока SSE
           LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
           
-          # Если не удалось распарсить, используем весь ответ
           if [ -z "$LAST_LINE" ]; then
             LAST_LINE="$RESPONSE"
           fi
@@ -62,49 +56,40 @@ jobs:
           echo "📋 Server response:"
           echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
           
-          # Улучшенная проверка ответов
+          # Проверяем различные статусы ответа
           if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-            # Извлекаем сообщение об успехе
-            SUCCESS_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            XP_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*You received \([0-9]*\) XP.*/\1/p')
+            echo "✅ Request completed successfully!"
             
-            if [ -n "$SUCCESS_MSG" ]; then
-              echo "✅ $SUCCESS_MSG"
-            else
-              echo "✅ Request completed successfully!"
-            fi
-            
+            # Пытаемся извлечь полученное количество XP
+            XP_AMOUNT=$(echo "$LAST_LINE" | grep -o '[0-9]* XP' | grep -o '[0-9]*')
             if [ -n "$XP_AMOUNT" ]; then
               echo "🎉 Successfully received $XP_AMOUNT XP!"
-            else
-              echo "🎉 Successfully received XP!"
             fi
-            
-            # Извлекаем информацию о лимите
-            LIMIT_INFO=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            if [ -n "$LIMIT_INFO" ]; then
-              echo "📊 $LIMIT_INFO"
-            fi
-            
-            echo "⏰ Next request available in 4 hours"
             
           elif echo "$LAST_LINE" | grep -q '"status": false'; then
-            # Обрабатываем лимит (как в случае с Super и Streak)
+            # Анализируем причину отказа
             HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
             BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
+            MAX_AMOUNT=$(echo "$LAST_LINE" | grep -o '"max_amount": [0-9]*' | grep -o '[0-9]*')
             
-            echo "⏳ LIMIT REACHED: $HEAD"
+            echo "⚠️  Request warning: $HEAD"
             echo "📊 Details: $BODY"
-            echo "✅ INFO: This may be expected if limit is reached"
+            
+            if [ -n "$MAX_AMOUNT" ]; then
+              echo "💡 Maximum allowed per request: $MAX_AMOUNT XP"
+              echo "🔧 Suggestion: Reduce amount to $MAX_AMOUNT XP or less"
+            fi
+            
+            # Не выходим с ошибкой, так как это не критично
+            echo "ℹ️  This is a limit warning, not a failure"
             
           elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
             ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
             echo "❌ Request failed: $ERROR_MSG"
             exit 1
           else
-            # Если получили ответ, но не распознали формат
             if [ -n "$LAST_LINE" ]; then
-              echo "⚠️  Received response (check above for details)"
+              echo "⚠️  Received unexpected response format"
             else
               echo "❌ ERROR: No response from server"
               exit 1
