@@ -2,7 +2,7 @@ name: Streak Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'  # Запуск каждые 4 часа на 5-й минуте (UTC)
+    - cron: '10 */4 * * *'  # Каждые 4 часа в 10-й минуте (UTC)
   workflow_dispatch:        # Ручной запуск
 
 permissions:
@@ -13,10 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Обновлено с v3 на v4
 
-      - name: Install jq (JSON processor)
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
 
       - name: Request Streak from Duolingo PRO
         run: |
@@ -87,7 +88,7 @@ jobs:
             fi
             
           elif echo "$LAST_LINE" | grep -q '"status": false'; then
-            # Обрабатываем лимит (как в случае с Super)
+            # Обрабатываем лимит
             HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
             BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
             
@@ -115,8 +116,9 @@ jobs:
           fi
           
           echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
-
+          
       - name: Log completion
         run: |
           echo "📝 Log entry: Streak automation ran"
           echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Next scheduled run: In 4 hours"
