@@ -1,8 +1,11 @@
 name: Super Automation
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # Принудительно используем Node.js 24
+
 on:
   schedule:
-    - cron: '0 0 * * *'  # Каждый день в полночь (UTC)
+    - cron: '0 0 * * *'  # Каждый день в 00:00 UTC
   workflow_dispatch:        # Ручной запуск
 
 permissions:
@@ -13,9 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Обновлено с v3 на v4
 
-      - name: Request 3 Days of Super
+      - name: Install jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Request Super from Duolingo PRO
         run: |
           echo "🚀 Starting Super automation..."
           echo "⏳ Waiting 10 seconds before request..."
@@ -27,7 +34,7 @@ jobs:
             exit 1
           fi
           
-          echo "📤 Requesting 3 Days of Super..."
+          echo "📤 Requesting 1 Day of Super..."
           
           # Создаем корректный payload с указанием языка (японский - ja)
           PAYLOAD='{
@@ -72,7 +79,7 @@ jobs:
             if echo "$FINAL_RESPONSE" | grep -qi "attempted" || echo "$FINAL_RESPONSE" | grep -qi "may not have worked"; then
               echo "⚠️  Note: Check your Duolingo account to confirm Super status"
             else
-              echo "🎉 3 Days of Super should be active!"
+              echo "🎉 1 Day of Super should be active!"
             fi
             
           elif echo "$FINAL_RESPONSE" | grep -q '"status": false'; then
@@ -109,8 +116,7 @@ jobs:
           fi
           
           echo "✨ Super automation completed at: $(date -u '+%H:%M:%S UTC')"
-          echo "⏰ Next scheduled run: $(date -u -d 'tomorrow 00:00' '+%Y-%m-%d %H:%M UTC')"
-
+          
       - name: Log completion
         run: |
           echo "📝 Log entry: Super automation ran"
