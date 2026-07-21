@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Activate Super Duolingo via Official API
+      - name: Activate Super Duolingo (Official API)
         run: |
           echo "🚀 Starting Super activation..."
           
@@ -29,7 +29,7 @@ jobs:
             exit 1
           fi
           
-          # Получаем ID пользователя из JWT
+          # Извлекаем user_id из JWT
           USER_ID=$(echo -n "$JWT" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq -r '.sub' 2>/dev/null)
           
           if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
@@ -38,9 +38,9 @@ jobs:
           fi
           
           echo "👤 User ID: $USER_ID"
-          echo "📤 Activating 3 days of Super Duolingo for Japanese..."
+          echo "📤 Activating 3 days of Super Duolingo..."
           
-          # Активация Super через официальное API (С ТВОИМ ЯЗЫКОМ)
+          # Официальный API (работает всегда)
           RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/users/${USER_ID}/shop-items" \
             -H "Authorization: Bearer ${JWT}" \
             -H "Content-Type: application/json" \
@@ -62,22 +62,19 @@ jobs:
           if echo "$RESPONSE" | grep -q '"purchaseId"'; then
             echo "✅ SUCCESS: Super Duolingo activated!"
             echo "🎉 3 days of Super should be active on your account"
-            echo "📌 Check your Duolingo account to confirm"
             
           elif echo "$RESPONSE" | grep -q '"error"'; then
             ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error // .message // "Unknown error"' 2>/dev/null)
             
             if echo "$ERROR_MSG" | grep -qi "already" || echo "$ERROR_MSG" | grep -qi "exist"; then
               echo "⏳ INFO: Super already active or previously redeemed"
-              echo "🔄 Next attempt will be tomorrow at 00:00 UTC"
             else
               echo "❌ ERROR: $ERROR_MSG"
-              echo "$RESPONSE"
               exit 1
             fi
             
           else
-            # Если ответ пустой или непонятный
+            # Если ответ пустой
             if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "null" ]; then
               echo "❌ ERROR: Empty response from server"
               echo "💡 Possible reasons:"
@@ -87,7 +84,6 @@ jobs:
               exit 1
             else
               echo "⚠️  Response received (check above for details)"
-              echo "ℹ️  Continuing execution..."
             fi
           fi
           
