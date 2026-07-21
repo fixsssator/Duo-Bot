@@ -1,12 +1,9 @@
 name: Super Automation
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # Принудительно используем Node.js 24
-
 on:
   schedule:
-    - cron: '0 0 * * *'  # Каждый день в 00:00 UTC
-  workflow_dispatch:        # Ручной запуск
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,101 +13,73 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Обновлено с v3 на v4
+        uses: actions/checkout@v4
 
       - name: Install jq
         run: |
           sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Request Super from Duolingo PRO
+      - name: Activate Super Duolingo via Official API
         run: |
-          echo "🚀 Starting Super automation..."
-          echo "⏳ Waiting 10 seconds before request..."
-          sleep 10
+          echo "🚀 Starting Super activation..."
           
-          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
-          if [ -z "$TOKEN" ]; then
+          JWT="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$JWT" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
             exit 1
           fi
           
-          echo "📤 Requesting 1 Day of Super..."
+          # Получаем ID пользователя из JWT
+          USER_ID=$(echo -n "$JWT" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq -r '.sub' 2>/dev/null)
           
-          # Создаем корректный payload с указанием языка (японский - ja)
-          PAYLOAD='{
-            "type": "super",
-            "amount": 1,
-            "version": "3.1BETA.03",
-            "lang": "ja"
-          }'
-          
-          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: text/event-stream" \
-            -d "$PAYLOAD")
-          
-          # Извлекаем финальный ответ
-          FINAL_RESPONSE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
-          
-          # Если не удалось извлечь, используем весь ответ
-          if [ -z "$FINAL_RESPONSE" ]; then
-            FINAL_RESPONSE="$RESPONSE"
+          if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
+            echo "❌ ERROR: Failed to extract user ID from token"
+            exit 1
           fi
           
-          echo "📋 Server response:"
-          echo "$FINAL_RESPONSE" | jq '.' 2>/dev/null || echo "$FINAL_RESPONSE"
+          echo "👤 User ID: $USER_ID"
+          echo "📤 Activating 3 days of Super Duolingo..."
           
-          # Проверяем разные варианты ответов
-          if echo "$FINAL_RESPONSE" | grep -q '"status": "completed"'; then
-            # Извлекаем детали из notification
-            HEAD=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            BODY=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
+          # Активация Super через официальное API (как в DuoRain)
+          RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/users/${USER_ID}/shop-items" \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            -H "Referer: https://www.duolingo.com/" \
+            -H "Origin: https://www.duolingo.com" \
+            -d '{
+              "itemName": "immersive_subscription",
+              "productId": "com.duolingo.immersive_free_trial_subscription"
+            }')
+          
+          echo "📋 Server response:"
+          echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
+          
+          # Проверяем ответ
+          if echo "$RESPONSE" | grep -q '"purchaseId"'; then
+            echo "✅ SUCCESS: Super Duolingo activated!"
+            echo "🎉 3 days of Super should be active on your account"
+            echo "📌 Check your Duolingo account to confirm"
             
-            echo "✅ SUCCESS: Request completed!"
-            if [ -n "$HEAD" ]; then
-              echo "📢 $HEAD"
-            fi
-            if [ -n "$BODY" ]; then
-              echo "📝 $BODY"
-            fi
+          elif echo "$RESPONSE" | grep -q '"error"'; then
+            ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error // .message // "Unknown error"' 2>/dev/null)
             
-            # Проверяем, действительно ли Super был добавлен
-            if echo "$FINAL_RESPONSE" | grep -qi "attempted" || echo "$FINAL_RESPONSE" | grep -qi "may not have worked"; then
-              echo "⚠️  Note: Check your Duolingo account to confirm Super status"
+            if echo "$ERROR_MSG" | grep -qi "already" || echo "$ERROR_MSG" | grep -qi "exist"; then
+              echo "⏳ INFO: Super already active or previously redeemed"
+              echo "🔄 Next attempt will be tomorrow at 00:00 UTC"
             else
-              echo "🎉 1 Day of Super should be active!"
+              echo "❌ ERROR: $ERROR_MSG"
+              exit 1
             fi
-            
-          elif echo "$FINAL_RESPONSE" | grep -q '"status": false'; then
-            # Обрабатываем лимит
-            HEAD=$(echo "$FINAL_RESPONSE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
-            BODY=$(echo "$FINAL_RESPONSE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
-            MAX_AMOUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"max_amount": \([0-9]*\).*/\1/p')
-            
-            echo "⏳ LIMIT REACHED: $HEAD"
-            echo "📊 Details: $BODY"
-            
-            if [ "$MAX_AMOUNT" = "0" ]; then
-              echo "✅ INFO: Daily limit already used - expected behavior"
-              echo "🔄 Next Super request will be available tomorrow at 00:00 UTC"
-            fi
-            
-          elif echo "$FINAL_RESPONSE" | grep -q '"status": "failed"'; then
-            ERROR_MSG=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            echo "❌ ERROR: Request failed"
-            if [ -n "$ERROR_MSG" ]; then
-              echo "📝 Details: $ERROR_MSG"
-            fi
-            exit 1
             
           else
-            # Если получили ответ, но не распознали формат
-            if [ -n "$FINAL_RESPONSE" ]; then
+            # Если ответ не распознан, но не ошибка
+            if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
               echo "⚠️  Response received (check above for details)"
               echo "ℹ️  Continuing execution..."
             else
-              echo "❌ ERROR: No response from server"
+              echo "❌ ERROR: No valid response from server"
               exit 1
             fi
           fi
