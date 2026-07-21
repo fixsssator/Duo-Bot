@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Farm Streak via Duolingo API
+      - name: Farm Streak via Duolingo API (DuoRain method)
         run: |
           echo "🔥 Starting Streak farming..."
           
@@ -38,32 +38,36 @@ jobs:
           
           echo "👤 User ID: $USER_ID"
           
+          # Параметры как в DuoRain
           FROM_LANG="ru"
           TO_LANG="ja"
-          TARGET_STREAK=10
+          TARGET_STREAK=10  # Меняй на любое число
           
-          echo "📤 Farming $TARGET_STREAK streak days for Japanese..."
+          echo "📤 Farming $TARGET_STREAK streak days..."
           
-          # Получаем course_id для твоего языка
-          get_course_id() {
+          # Получаем информацию о текущем стрейке (как в DuoRain)
+          get_streak_info() {
             local profile=$(curl -s -X GET "https://www.duolingo.com/2017-06-30/users/${USER_ID}" \
               -H "Authorization: Bearer ${JWT}" \
               -H "Content-Type: application/json")
             
-            echo "$profile" | jq -r '.courses[] | select(.learningLanguage == "'"$TO_LANG"'") | .id' 2>/dev/null | head -1
+            echo "$profile" | jq -r '.streakData.currentStreak.startDate // ""' 2>/dev/null
           }
           
-          COURSE_ID=$(get_course_id)
+          STREAK_START=$(get_streak_info)
           
-          if [ -z "$COURSE_ID" ] || [ "$COURSE_ID" = "null" ]; then
-            echo "⚠️  Could not find course ID, using default"
-            COURSE_ID=""
+          if [ -z "$STREAK_START" ] || [ "$STREAK_START" = "null" ] || [ "$STREAK_START" = "" ]; then
+            echo "⚠️  No existing streak found, starting from today"
+            STREAK_START=$(date -u +%Y-%m-%d)
           else
-            echo "📚 Course ID: $COURSE_ID"
+            echo "📅 Current streak started: $STREAK_START"
           fi
           
-          send_streak_request() {
-            # Пробуем создать сессию с courseId
+          # Функция отправки streak запроса (ТОЧНО как в DuoRain)
+          send_streak_day() {
+            local target_date=$1
+            
+            # Создаем сессию (как в DuoRain)
             local session_payload='{
               "challengeTypes": ["assist","characterIntro","characterMatch","characterPuzzle","characterSelect","characterTrace","characterWrite","completeReverseTranslation","definition","dialogue","extendedMatch","extendedListenMatch","form","freeResponse","gapFill","judge","listen","listenComplete","listenMatch","match","name","listenComprehension","listenIsolation","listenSpeak","listenTap","orderTapComplete","partialListen","partialReverseTranslate","patternTapComplete","radioBinary","radioImageSelect","radioListenMatch","radioListenRecognize","radioSelect","readComprehension","reverseAssist","sameDifferent","select","selectPronunciation","selectTranscription","svgPuzzle","syllableTap","syllableListenTap","speak","tapCloze","tapClozeTable","tapComplete","tapCompleteTable","tapDescribe","translate","transliterate","transliterationAssist","typeCloze","typeClozeTable","typeComplete","typeCompleteTable","writeComprehension"],
               "fromLanguage": "'"$FROM_LANG"'",
@@ -75,46 +79,43 @@ jobs:
               "type": "GLOBAL_PRACTICE"
             }'
             
-            # Добавляем courseId если есть
-            if [ -n "$COURSE_ID" ] && [ "$COURSE_ID" != "null" ]; then
-              session_payload=$(echo "$session_payload" | jq --arg cid "$COURSE_ID" '. + {courseId: $cid}')
-            fi
-            
-            # Создаем сессию
-            SESSION_RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/sessions" \
+            local session_response=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/sessions" \
               -H "Authorization: Bearer ${JWT}" \
               -H "Content-Type: application/json" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "User-Agent: Duolingo-Storm/1.0" \
               -H "Accept: application/json" \
               -d "$session_payload")
             
-            SESSION_ID=$(echo "$SESSION_RESPONSE" | jq -r '.id' 2>/dev/null)
+            local session_id=$(echo "$session_response" | jq -r '.id' 2>/dev/null)
             
-            if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
-              echo "$SESSION_RESPONSE" | jq '.' 2>/dev/null || echo "$SESSION_RESPONSE"
+            if [ -z "$session_id" ] || [ "$session_id" = "null" ]; then
+              echo "⚠️  Failed to create session"
               return 1
             fi
             
-            # Завершаем сессию
-            local now=$(date +%s)
-            local yesterday=$((now - 86400))
+            # Конвертируем дату в timestamp (как в DuoRain)
+            local start_ts=$(date -d "$target_date - 1 day" +%s 2>/dev/null || echo $(( $(date -u +%s) - 86400 )))
+            local end_ts=$(date -d "$target_date" +%s 2>/dev/null || date -u +%s)
             
-            UPDATE_RESPONSE=$(curl -s -X PUT "https://www.duolingo.com/2017-06-30/sessions/${SESSION_ID}" \
+            # Завершаем сессию (как в DuoRain)
+            local update_payload='{
+              "heartsLeft": 5,
+              "startTime": '"$start_ts"',
+              "endTime": '"$end_ts"',
+              "enableBonusPoints": false,
+              "failed": false,
+              "maxInLessonStreak": 9,
+              "shouldLearnThings": true
+            }'
+            
+            local update_response=$(curl -s -X PUT "https://www.duolingo.com/2017-06-30/sessions/${session_id}" \
               -H "Authorization: Bearer ${JWT}" \
               -H "Content-Type: application/json" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "User-Agent: Duolingo-Storm/1.0" \
               -H "Accept: application/json" \
-              -d "{
-                \"heartsLeft\": 5,
-                \"startTime\": ${yesterday},
-                \"endTime\": ${now},
-                \"enableBonusPoints\": false,
-                \"failed\": false,
-                \"maxInLessonStreak\": 9,
-                \"shouldLearnThings\": true
-              }")
+              -d "$update_payload")
             
-            if echo "$UPDATE_RESPONSE" | grep -q '"id"'; then
+            if echo "$update_response" | grep -q '"id"'; then
               return 0
             else
               return 1
@@ -125,18 +126,29 @@ jobs:
           SUCCESS=0
           FAILED=0
           
+          # Вычисляем даты для фарма (как в DuoRain)
+          CURRENT_DATE=$(date -u +%Y-%m-%d)
+          FARM_DATE=$(date -d "$STREAK_START - 1 day" +%Y-%m-%d 2>/dev/null || echo "$STREAK_START")
+          
+          echo "⏳ Farming in progress..."
+          
           while [ $TOTAL -lt $TARGET_STREAK ]; do
-            if send_streak_request; then
+            if send_streak_day "$FARM_DATE"; then
               TOTAL=$((TOTAL + 1))
               SUCCESS=$((SUCCESS + 1))
-              echo "🔥 +1 streak day (${TOTAL}/${TARGET_STREAK})"
+              echo "🔥 +1 streak day (${TOTAL}/${TARGET_STREAK}) - Date: $FARM_DATE"
             else
               FAILED=$((FAILED + 1))
               echo "⚠️  Retrying... (${FAILED} failures)"
-              sleep 3
+              sleep 2
+              continue
             fi
-            sleep 1
+            
+            # Следующий день
+            FARM_DATE=$(date -d "$FARM_DATE - 1 day" +%Y-%m-%d 2>/dev/null || echo "$(date -u +%Y-%m-%d)")
+            sleep 0.5
           done
           
           echo "📊 Results: ${SUCCESS} success, ${FAILED} failures"
           echo "✅ Total streak days farmed: ${TOTAL}"
+          echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
