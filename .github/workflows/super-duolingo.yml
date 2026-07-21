@@ -38,9 +38,9 @@ jobs:
           fi
           
           echo "👤 User ID: $USER_ID"
-          echo "📤 Activating 3 days of Super Duolingo..."
+          echo "📤 Activating 3 days of Super Duolingo for Japanese..."
           
-          # Активация Super через официальное API (как в DuoRain)
+          # Активация Super через официальное API (С ТВОИМ ЯЗЫКОМ)
           RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/users/${USER_ID}/shop-items" \
             -H "Authorization: Bearer ${JWT}" \
             -H "Content-Type: application/json" \
@@ -48,10 +48,12 @@ jobs:
             -H "Accept: application/json" \
             -H "Referer: https://www.duolingo.com/" \
             -H "Origin: https://www.duolingo.com" \
-            -d '{
-              "itemName": "immersive_subscription",
-              "productId": "com.duolingo.immersive_free_trial_subscription"
-            }')
+            -d "{
+              \"itemName\": \"immersive_subscription\",
+              \"productId\": \"com.duolingo.immersive_free_trial_subscription\",
+              \"learningLanguage\": \"ja\",
+              \"fromLanguage\": \"ru\"
+            }")
           
           echo "📋 Server response:"
           echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
@@ -70,25 +72,23 @@ jobs:
               echo "🔄 Next attempt will be tomorrow at 00:00 UTC"
             else
               echo "❌ ERROR: $ERROR_MSG"
+              echo "$RESPONSE"
               exit 1
             fi
             
           else
-            # Если ответ не распознан, но не ошибка
-            if [ -n "$RESPONSE" ] && [ "$RESPONSE" != "null" ]; then
+            # Если ответ пустой или непонятный
+            if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "null" ]; then
+              echo "❌ ERROR: Empty response from server"
+              echo "💡 Possible reasons:"
+              echo "   - Invalid token"
+              echo "   - Super already active"
+              echo "   - API endpoint changed"
+              exit 1
+            else
               echo "⚠️  Response received (check above for details)"
               echo "ℹ️  Continuing execution..."
-            else
-              echo "❌ ERROR: No valid response from server"
-              exit 1
             fi
           fi
           
           echo "✨ Super automation completed at: $(date -u '+%H:%M:%S UTC')"
-          
-      - name: Log completion
-        run: |
-          echo "📝 Log entry: Super automation ran"
-          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Status: Request processed"
-          echo "Next automatic run: Tomorrow at 00:00 UTC"
