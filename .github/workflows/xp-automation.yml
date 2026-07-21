@@ -2,8 +2,8 @@ name: XP Automation
 
 on:
   schedule:
-    - cron: '5 */4 * * *'  # Каждые 4 часа в 5-й минуте (UTC)
-  workflow_dispatch:        # Ручной запуск
+    - cron: '5 */4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,91 +15,93 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Request XP from Duolingo PRO
+      - name: Farm XP via Duolingo API
         run: |
-          echo "🚀 Starting XP automation..."
-          echo "⏳ Waiting 10 seconds before request..."
-          sleep 10
+          echo "🚀 Starting XP farming..."
           
-          # Проверяем токен
-          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
-          if [ -z "$TOKEN" ]; then
+          JWT="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$JWT" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
             exit 1
           fi
           
-          echo "📤 Sending XP request (10,000 XP)..."
+          # ТВОИ ПАРАМЕТРЫ (из твоего кода)
+          FROM_LANG="ru"           # Родной язык
+          TO_LANG="ja"             # Японский (как в твоем PAYLOAD)
+          STORY_SLUG="fr-en-le-passeport"  # Стандартная история
+          TARGET_XP=10000          # Как в твоем запросе
           
-          # ИСПРАВЛЕНО: Уменьшено до 10,000 XP (максимально допустимое значение)
-          PAYLOAD='{
-            "type": "xp",
-            "amount": 10000,
-            "version": "3.1BETA.03",
-            "lang": "ja"
-          }'
+          echo "📤 Farming $TARGET_XP XP for Japanese..."
           
-          echo "🔄 Processing request..."
+          # Функция запроса XP
+          send_xp() {
+            local bonus=$1
+            local now=$(date +%s)
+            local dur=$((RANDOM % 120 + 300))
+            
+            curl -s -X POST "https://stories.duolingo.com/api2/stories/${STORY_SLUG}/complete" \
+              -H "Authorization: Bearer ${JWT}" \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "Accept: application/json" \
+              -d "{
+                \"awardXp\": true,
+                \"completedBonusChallenge\": true,
+                \"fromLanguage\": \"${FROM_LANG}\",
+                \"learningLanguage\": \"${TO_LANG}\",
+                \"hasXpBoost\": false,
+                \"illustrationFormat\": \"svg\",
+                \"isFeaturedStoryInPracticeHub\": true,
+                \"isLegendaryMode\": true,
+                \"isV2Redo\": false,
+                \"isV2Story\": false,
+                \"masterVersion\": true,
+                \"maxScore\": 0,
+                \"score\": 0,
+                \"happyHourBonusXp\": ${bonus},
+                \"startTime\": ${now},
+                \"endTime\": $((now + dur))
+              }"
+          }
           
-          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: text/event-stream" \
-            -d "$PAYLOAD")
+          TOTAL=0
+          REQS=0
           
-          # Парсим последний JSON из потока SSE
-          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
+          echo "⏳ Farming in progress..."
           
-          if [ -z "$LAST_LINE" ]; then
-            LAST_LINE="$RESPONSE"
+          # Основные запросы по 500 XP
+          while [ $TOTAL -lt $((TARGET_XP - 30)) ]; do
+            RESP=$(send_xp 469)
+            AWARD=$(echo "$RESP" | grep -o '"awardedXp":[0-9]*' | grep -o '[0-9]*')
+            
+            if [ -z "$AWARD" ] || [ "$AWARD" = "0" ]; then
+              echo "⚠️  Retrying..."
+              sleep 2
+              continue
+            fi
+            
+            TOTAL=$((TOTAL + AWARD))
+            REQS=$((REQS + 1))
+            echo "✅ +${AWARD} XP (${TOTAL}/${TARGET_XP})"
+            sleep 0.5
+          done
+          
+          # Остаток
+          REM=$((TARGET_XP - TOTAL))
+          if [ $REM -gt 0 ]; then
+            BONUS=$((REM - 30))
+            [ $BONUS -lt 0 ] && BONUS=0
+            [ $BONUS -gt 469 ] && BONUS=469
+            
+            RESP=$(send_xp $BONUS)
+            AWARD=$(echo "$RESP" | grep -o '"awardedXp":[0-9]*' | grep -o '[0-9]*')
+            
+            if [ -n "$AWARD" ] && [ "$AWARD" != "0" ]; then
+              TOTAL=$((TOTAL + AWARD))
+              REQS=$((REQS + 1))
+              echo "✅ +${AWARD} XP (${TOTAL}/${TARGET_XP})"
+            fi
           fi
           
-          echo "📋 Server response:"
-          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
-          
-          # Проверяем различные статусы ответа
-          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-            echo "✅ Request completed successfully!"
-            
-            # Пытаемся извлечь полученное количество XP
-            XP_AMOUNT=$(echo "$LAST_LINE" | grep -o '[0-9]* XP' | grep -o '[0-9]*')
-            if [ -n "$XP_AMOUNT" ]; then
-              echo "🎉 Successfully received $XP_AMOUNT XP!"
-            fi
-            
-          elif echo "$LAST_LINE" | grep -q '"status": false'; then
-            # Анализируем причину отказа
-            HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
-            BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
-            MAX_AMOUNT=$(echo "$LAST_LINE" | grep -o '"max_amount": [0-9]*' | grep -o '[0-9]*')
-            
-            echo "⚠️  Request warning: $HEAD"
-            echo "📊 Details: $BODY"
-            
-            if [ -n "$MAX_AMOUNT" ]; then
-              echo "💡 Maximum allowed per request: $MAX_AMOUNT XP"
-              echo "🔧 Suggestion: Reduce amount to $MAX_AMOUNT XP or less"
-            fi
-            
-            # Не выходим с ошибкой, так как это не критично
-            echo "ℹ️  This is a limit warning, not a failure"
-            
-          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
-            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            echo "❌ Request failed: $ERROR_MSG"
-            exit 1
-          else
-            if [ -n "$LAST_LINE" ]; then
-              echo "⚠️  Received unexpected response format"
-            else
-              echo "❌ ERROR: No response from server"
-              exit 1
-            fi
-          fi
-          
+          echo "📊 Total: ${TOTAL} XP farmed in ${REQS} requests"
           echo "✨ XP automation completed at: $(date -u '+%H:%M:%S UTC')"
-          
-      - name: Log completion
-        run: |
-          echo "📝 Log entry: XP automation ran"
-          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Next scheduled run: In 4 hours"
