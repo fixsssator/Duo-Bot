@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Activate Super Duolingo (Official API)
+      - name: Activate Super Duolingo
         run: |
           echo "🚀 Starting Super activation..."
           
@@ -29,7 +29,6 @@ jobs:
             exit 1
           fi
           
-          # Извлекаем user_id из JWT
           USER_ID=$(echo -n "$JWT" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq -r '.sub' 2>/dev/null)
           
           if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
@@ -38,9 +37,23 @@ jobs:
           fi
           
           echo "👤 User ID: $USER_ID"
-          echo "📤 Activating 3 days of Super Duolingo..."
           
-          # Официальный API (работает всегда)
+          # 1. СНАЧАЛА ПРОВЕРЯЕМ, ЕСТЬ ЛИ SUPER
+          echo "📊 Checking current Super status..."
+          PROFILE=$(curl -s -X GET "https://www.duolingo.com/2017-06-30/users/${USER_ID}" \
+            -H "Authorization: Bearer ${JWT}" \
+            -H "Content-Type: application/json")
+          
+          if echo "$PROFILE" | grep -q '"hasPlus": true'; then
+            echo "✅ Super is already ACTIVE on your account!"
+            echo "🎉 Nothing to do - you already have Super!"
+            echo "✨ Super automation completed at: $(date -u '+%H:%M:%S UTC')"
+            exit 0
+          fi
+          
+          # 2. ЕСЛИ SUPER НЕТ - ПЫТАЕМСЯ АКТИВИРОВАТЬ
+          echo "📤 Super not found. Attempting to activate 3 days of Super..."
+          
           RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/users/${USER_ID}/shop-items" \
             -H "Authorization: Bearer ${JWT}" \
             -H "Content-Type: application/json" \
@@ -58,7 +71,7 @@ jobs:
           echo "📋 Server response:"
           echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
           
-          # Проверяем ответ
+          # 3. ПРОВЕРЯЕМ РЕЗУЛЬТАТ
           if echo "$RESPONSE" | grep -q '"purchaseId"'; then
             echo "✅ SUCCESS: Super Duolingo activated!"
             echo "🎉 3 days of Super should be active on your account"
@@ -74,16 +87,22 @@ jobs:
             fi
             
           else
-            # Если ответ пустой
-            if [ -z "$RESPONSE" ] || [ "$RESPONSE" = "null" ]; then
-              echo "❌ ERROR: Empty response from server"
-              echo "💡 Possible reasons:"
-              echo "   - Invalid token"
-              echo "   - Super already active"
+            # Если ответ пустой - значит Super уже есть (проверяем еще раз)
+            echo "⏳ Empty response - checking Super status again..."
+            PROFILE2=$(curl -s -X GET "https://www.duolingo.com/2017-06-30/users/${USER_ID}" \
+              -H "Authorization: Bearer ${JWT}" \
+              -H "Content-Type: application/json")
+            
+            if echo "$PROFILE2" | grep -q '"hasPlus": true'; then
+              echo "✅ Super is now ACTIVE on your account!"
+              echo "🎉 Activation successful!"
+            else
+              echo "⚠️  Super is still not active"
+              echo "💡 This might mean:"
+              echo "   - Free trial already used"
+              echo "   - Trial not available in your region"
               echo "   - API endpoint changed"
               exit 1
-            else
-              echo "⚠️  Response received (check above for details)"
             fi
           fi
           
