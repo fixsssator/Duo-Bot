@@ -29,7 +29,6 @@ jobs:
             exit 1
           fi
           
-          # Извлекаем user_id из JWT
           USER_ID=$(echo -n "$JWT" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq -r '.sub' 2>/dev/null)
           
           if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
@@ -39,15 +38,32 @@ jobs:
           
           echo "👤 User ID: $USER_ID"
           
-          # Твои языки
           FROM_LANG="ru"
           TO_LANG="ja"
           TARGET_STREAK=10
           
           echo "📤 Farming $TARGET_STREAK streak days for Japanese..."
           
-          # Функция для одного запроса страйка (как в DuoRain)
+          # Получаем course_id для твоего языка
+          get_course_id() {
+            local profile=$(curl -s -X GET "https://www.duolingo.com/2017-06-30/users/${USER_ID}" \
+              -H "Authorization: Bearer ${JWT}" \
+              -H "Content-Type: application/json")
+            
+            echo "$profile" | jq -r '.courses[] | select(.learningLanguage == "'"$TO_LANG"'") | .id' 2>/dev/null | head -1
+          }
+          
+          COURSE_ID=$(get_course_id)
+          
+          if [ -z "$COURSE_ID" ] || [ "$COURSE_ID" = "null" ]; then
+            echo "⚠️  Could not find course ID, using default"
+            COURSE_ID=""
+          else
+            echo "📚 Course ID: $COURSE_ID"
+          fi
+          
           send_streak_request() {
+            # Пробуем создать сессию с courseId
             local session_payload='{
               "challengeTypes": ["assist","characterIntro","characterMatch","characterPuzzle","characterSelect","characterTrace","characterWrite","completeReverseTranslation","definition","dialogue","extendedMatch","extendedListenMatch","form","freeResponse","gapFill","judge","listen","listenComplete","listenMatch","match","name","listenComprehension","listenIsolation","listenSpeak","listenTap","orderTapComplete","partialListen","partialReverseTranslate","patternTapComplete","radioBinary","radioImageSelect","radioListenMatch","radioListenRecognize","radioSelect","readComprehension","reverseAssist","sameDifferent","select","selectPronunciation","selectTranscription","svgPuzzle","syllableTap","syllableListenTap","speak","tapCloze","tapClozeTable","tapComplete","tapCompleteTable","tapDescribe","translate","transliterate","transliterationAssist","typeCloze","typeClozeTable","typeComplete","typeCompleteTable","writeComprehension"],
               "fromLanguage": "'"$FROM_LANG"'",
@@ -58,6 +74,11 @@ jobs:
               "smartTipsVersion": 2,
               "type": "GLOBAL_PRACTICE"
             }'
+            
+            # Добавляем courseId если есть
+            if [ -n "$COURSE_ID" ] && [ "$COURSE_ID" != "null" ]; then
+              session_payload=$(echo "$session_payload" | jq --arg cid "$COURSE_ID" '. + {courseId: $cid}')
+            fi
             
             # Создаем сессию
             SESSION_RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/sessions" \
@@ -70,11 +91,11 @@ jobs:
             SESSION_ID=$(echo "$SESSION_RESPONSE" | jq -r '.id' 2>/dev/null)
             
             if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
-              echo "⚠️  Failed to create session"
+              echo "$SESSION_RESPONSE" | jq '.' 2>/dev/null || echo "$SESSION_RESPONSE"
               return 1
             fi
             
-            # Завершаем сессию (это добавляет страйк)
+            # Завершаем сессию
             local now=$(date +%s)
             local yesterday=$((now - 86400))
             
@@ -94,10 +115,8 @@ jobs:
               }")
             
             if echo "$UPDATE_RESPONSE" | grep -q '"id"'; then
-              echo "✅ Session completed successfully"
               return 0
             else
-              echo "⚠️  Failed to complete session"
               return 1
             fi
           }
@@ -105,8 +124,6 @@ jobs:
           TOTAL=0
           SUCCESS=0
           FAILED=0
-          
-          echo "⏳ Farming in progress..."
           
           while [ $TOTAL -lt $TARGET_STREAK ]; do
             if send_streak_request; then
@@ -116,13 +133,10 @@ jobs:
             else
               FAILED=$((FAILED + 1))
               echo "⚠️  Retrying... (${FAILED} failures)"
-              sleep 2
+              sleep 3
             fi
-            
-            # Небольшая задержка между запросами
             sleep 1
           done
           
           echo "📊 Results: ${SUCCESS} success, ${FAILED} failures"
           echo "✅ Total streak days farmed: ${TOTAL}"
-          echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
