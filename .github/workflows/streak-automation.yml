@@ -1,12 +1,9 @@
 name: Streak Automation
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # Принудительно используем Node.js 24
-
 on:
   schedule:
-    - cron: '10 */4 * * *'  # Каждые 4 часа в 10-й минуте (UTC)
-  workflow_dispatch:        # Ручной запуск
+    - cron: '10 */4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,112 +13,116 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Обновлено с v3 на v4
+        uses: actions/checkout@v4
 
       - name: Install jq
         run: |
           sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Request Streak from Duolingo PRO
+      - name: Farm Streak via Duolingo API
         run: |
-          echo "🔥 Starting Streak automation..."
-          echo "⏳ Waiting 10 seconds before request..."
-          sleep 10
+          echo "🔥 Starting Streak farming..."
           
-          # Проверяем токен
-          TOKEN="${{ secrets.DUOLINGO_TOKEN }}"
-          if [ -z "$TOKEN" ]; then
+          JWT="${{ secrets.DUOLINGO_TOKEN }}"
+          if [ -z "$JWT" ]; then
             echo "❌ ERROR: DUOLINGO_TOKEN secret is not set"
-            echo "Please add your JWT token to GitHub Secrets"
             exit 1
           fi
           
-          echo "📤 Sending streak request (10 streak)..."
+          # Извлекаем user_id из JWT
+          USER_ID=$(echo -n "$JWT" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq -r '.sub' 2>/dev/null)
           
-          # Создаем корректный payload с указанием языка (японский - ja)
-          PAYLOAD='{
-            "type": "streak",
-            "amount": 10,
-            "version": "3.1BETA.03",
-            "lang": "ja"
-          }'
-          
-          echo "🔄 Processing request (this may take a moment)..."
-          
-          # Отправляем запрос с обработкой SSE (Server-Sent Events)
-          RESPONSE=$(curl --silent --ssl-no-revoke -X POST https://api.duolingopro.net/request \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: text/event-stream" \
-            -d "$PAYLOAD")
-          
-          # Парсим последний JSON из потока SSE
-          LAST_LINE=$(echo "$RESPONSE" | tail -n1 | sed 's/^data: //')
-          
-          # Если не удалось распарсить, используем весь ответ
-          if [ -z "$LAST_LINE" ]; then
-            LAST_LINE="$RESPONSE"
-          fi
-          
-          echo "📋 Server response:"
-          echo "$LAST_LINE" | jq '.' 2>/dev/null || echo "$LAST_LINE"
-          
-          # Проверяем статус ответа
-          if echo "$LAST_LINE" | grep -q '"status": "completed"'; then
-            # Извлекаем сообщение об успехе
-            HEAD=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            BODY=$(echo "$LAST_LINE" | sed -n 's/.*"body": "\([^"]*\)".*/\1/p' | sed 's/<[^>]*>//g')
-            STREAK_AMOUNT=$(echo "$LAST_LINE" | sed -n 's/.*received \([0-9]*\) streak.*/\1/p')
-            
-            if [ -n "$HEAD" ]; then
-              echo "✅ $HEAD"
-            else
-              echo "✅ Request completed successfully!"
-            fi
-            
-            if [ -n "$STREAK_AMOUNT" ]; then
-              echo "🔥 Successfully received $STREAK_AMOUNT streak days!"
-            else
-              echo "🔥 Successfully extended your streak!"
-            fi
-            
-            # Выводим дополнительную информацию
-            if [ -n "$BODY" ]; then
-              echo "📊 $BODY"
-            fi
-            
-          elif echo "$LAST_LINE" | grep -q '"status": false'; then
-            # Обрабатываем лимит
-            HEAD=$(echo "$LAST_LINE" | grep -o '"head": "[^"]*"' | cut -d'"' -f4)
-            BODY=$(echo "$LAST_LINE" | grep -o '"body": "[^"]*"' | cut -d'"' -f4 | sed 's/<[^>]*>//g')
-            
-            echo "⏳ LIMIT REACHED: $HEAD"
-            echo "📊 Details: $BODY"
-            echo "✅ INFO: Daily limit already used - expected behavior"
-            
-          elif echo "$LAST_LINE" | grep -q '"status": "failed"'; then
-            ERROR_MSG=$(echo "$LAST_LINE" | sed -n 's/.*"head": "\([^"]*\)".*/\1/p')
-            echo "❌ Request failed"
-            if [ -n "$ERROR_MSG" ]; then
-              echo "📝 Details: $ERROR_MSG"
-            fi
+          if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
+            echo "❌ ERROR: Failed to extract user ID from token"
             exit 1
-            
-          else
-            # Если получили ответ, но не распознали формат
-            if [ -n "$LAST_LINE" ]; then
-              echo "⚠️  Response received (check above for details)"
-              echo "ℹ️  Continuing execution..."
-            else
-              echo "❌ ERROR: No response from server"
-              exit 1
-            fi
           fi
           
+          echo "👤 User ID: $USER_ID"
+          
+          # Твои языки
+          FROM_LANG="ru"
+          TO_LANG="ja"
+          TARGET_STREAK=10
+          
+          echo "📤 Farming $TARGET_STREAK streak days for Japanese..."
+          
+          # Функция для одного запроса страйка (как в DuoRain)
+          send_streak_request() {
+            local session_payload='{
+              "challengeTypes": ["assist","characterIntro","characterMatch","characterPuzzle","characterSelect","characterTrace","characterWrite","completeReverseTranslation","definition","dialogue","extendedMatch","extendedListenMatch","form","freeResponse","gapFill","judge","listen","listenComplete","listenMatch","match","name","listenComprehension","listenIsolation","listenSpeak","listenTap","orderTapComplete","partialListen","partialReverseTranslate","patternTapComplete","radioBinary","radioImageSelect","radioListenMatch","radioListenRecognize","radioSelect","readComprehension","reverseAssist","sameDifferent","select","selectPronunciation","selectTranscription","svgPuzzle","syllableTap","syllableListenTap","speak","tapCloze","tapClozeTable","tapComplete","tapCompleteTable","tapDescribe","translate","transliterate","transliterationAssist","typeCloze","typeClozeTable","typeComplete","typeCompleteTable","writeComprehension"],
+              "fromLanguage": "'"$FROM_LANG"'",
+              "isFinalLevel": false,
+              "isV2": true,
+              "juicy": true,
+              "learningLanguage": "'"$TO_LANG"'",
+              "smartTipsVersion": 2,
+              "type": "GLOBAL_PRACTICE"
+            }'
+            
+            # Создаем сессию
+            SESSION_RESPONSE=$(curl -s -X POST "https://www.duolingo.com/2017-06-30/sessions" \
+              -H "Authorization: Bearer ${JWT}" \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "Accept: application/json" \
+              -d "$session_payload")
+            
+            SESSION_ID=$(echo "$SESSION_RESPONSE" | jq -r '.id' 2>/dev/null)
+            
+            if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+              echo "⚠️  Failed to create session"
+              return 1
+            fi
+            
+            # Завершаем сессию (это добавляет страйк)
+            local now=$(date +%s)
+            local yesterday=$((now - 86400))
+            
+            UPDATE_RESPONSE=$(curl -s -X PUT "https://www.duolingo.com/2017-06-30/sessions/${SESSION_ID}" \
+              -H "Authorization: Bearer ${JWT}" \
+              -H "Content-Type: application/json" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "Accept: application/json" \
+              -d "{
+                \"heartsLeft\": 5,
+                \"startTime\": ${yesterday},
+                \"endTime\": ${now},
+                \"enableBonusPoints\": false,
+                \"failed\": false,
+                \"maxInLessonStreak\": 9,
+                \"shouldLearnThings\": true
+              }")
+            
+            if echo "$UPDATE_RESPONSE" | grep -q '"id"'; then
+              echo "✅ Session completed successfully"
+              return 0
+            else
+              echo "⚠️  Failed to complete session"
+              return 1
+            fi
+          }
+          
+          TOTAL=0
+          SUCCESS=0
+          FAILED=0
+          
+          echo "⏳ Farming in progress..."
+          
+          while [ $TOTAL -lt $TARGET_STREAK ]; do
+            if send_streak_request; then
+              TOTAL=$((TOTAL + 1))
+              SUCCESS=$((SUCCESS + 1))
+              echo "🔥 +1 streak day (${TOTAL}/${TARGET_STREAK})"
+            else
+              FAILED=$((FAILED + 1))
+              echo "⚠️  Retrying... (${FAILED} failures)"
+              sleep 2
+            fi
+            
+            # Небольшая задержка между запросами
+            sleep 1
+          done
+          
+          echo "📊 Results: ${SUCCESS} success, ${FAILED} failures"
+          echo "✅ Total streak days farmed: ${TOTAL}"
           echo "✨ Streak automation completed at: $(date -u '+%H:%M:%S UTC')"
-          
-      - name: Log completion
-        run: |
-          echo "📝 Log entry: Streak automation ran"
-          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Next scheduled run: In 4 hours"
