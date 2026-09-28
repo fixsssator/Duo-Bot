@@ -28,34 +28,30 @@ jobs:
             exit 1
           fi
 
-          echo "🔍 Fetching user info..."
-          USER_INFO=$(curl -s "https://www.duolingo.com/2017-06-30/users?fields=id,username" \
-            -H "Authorization: Bearer ${JWT}" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            --max-time 30)
+          # 1. Извлекаем userId из JWT (без запросов к API)
+          echo "🔍 Extracting user ID from JWT..."
 
-          echo "📥 Response (first 200 chars): ${USER_INFO:0:200}"
+          JWT_PAYLOAD=$(echo "$JWT" | cut -d'.' -f2)
+          JWT_PAYLOAD_PADDED=$(echo "$JWT_PAYLOAD" | tr '_-' '/+' | awk '{
+            l = length($0) % 4
+            if (l == 2) print $0 "=="
+            else if (l == 3) print $0 "="
+            else print $0
+          }')
 
-          USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+          JWT_DECODED=$(echo "$JWT_PAYLOAD_PADDED" | base64 -d 2>/dev/null)
+          echo "📥 JWT payload (first 200 chars): ${JWT_DECODED:0:200}"
 
-          if [ -z "$USER_ID" ]; then
-            echo "⚠️  First method failed, trying /users/me..."
-            USER_INFO=$(curl -s "https://www.duolingo.com/2017-06-30/users/me" \
-              -H "Authorization: Bearer ${JWT}" \
-              -H "User-Agent: Mozilla/5.0" \
-              --max-time 30)
-            echo "📥 Response (first 200 chars): ${USER_INFO:0:200}"
-            USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
-          fi
+          USER_ID=$(echo "$JWT_DECODED" | grep -o '"sub":[0-9]*' | grep -o '[0-9]*' || true)
 
           if [ -z "$USER_ID" ]; then
-            echo "❌ ERROR: Could not determine user ID from token."
-            echo "💡 Check that your JWT token is valid and not expired."
-            echo "Full response: $USER_INFO"
+            echo "❌ ERROR: Could not extract user ID from JWT."
+            echo "💡 The token may be malformed or expired."
             exit 1
           fi
           echo "✅ User ID: ${USER_ID}"
 
+          # 2. Настройки
           FROM_LANG="en"
           TO_LANG="fr"
           STORY_SLUG="fr-en-le-passeport"
@@ -64,6 +60,7 @@ jobs:
 
           echo "🚀 Farming $TARGET_XP_PER_CYCLE XP per cycle..."
 
+          # 3. Функции
           complete_story() {
             local now=$(date +%s)
             local dur=$((RANDOM % 60 + 120))
@@ -110,6 +107,7 @@ jobs:
               -d '{"consumed":true}'
           }
 
+          # 4. Основной цикл
           TOTAL_GEMS=0
           CYCLE=0
 
