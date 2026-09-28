@@ -2,7 +2,7 @@ name: Gem Automation via Stories
 
 on:
   schedule:
-    - cron: '5 */6 * * *' # Запуск каждые 6 часов
+    - cron: '5 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Farm Gems via Duolingo API
+        shell: bash
         run: |
+          set +e
+
           echo "💎 Starting Gem farming via Story completion..."
 
           JWT="${{ secrets.DUOLINGO_TOKEN }}"
@@ -25,45 +28,50 @@ jobs:
             exit 1
           fi
 
-          # 1. Получаем userId из JWT
+          echo "🔍 Fetching user info..."
           USER_INFO=$(curl -s "https://www.duolingo.com/2017-06-30/users?fields=id,username" \
             -H "Authorization: Bearer ${JWT}" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            --max-time 30)
 
-          USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
+          echo "📥 Response (first 200 chars): ${USER_INFO:0:200}"
+
+          USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
 
           if [ -z "$USER_ID" ]; then
-            # Альтернативный метод
+            echo "⚠️  First method failed, trying /users/me..."
             USER_INFO=$(curl -s "https://www.duolingo.com/2017-06-30/users/me" \
               -H "Authorization: Bearer ${JWT}" \
-              -H "User-Agent: Mozilla/5.0")
-            USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
+              -H "User-Agent: Mozilla/5.0" \
+              --max-time 30)
+            echo "📥 Response (first 200 chars): ${USER_INFO:0:200}"
+            USER_ID=$(echo "$USER_INFO" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
           fi
 
           if [ -z "$USER_ID" ]; then
             echo "❌ ERROR: Could not determine user ID from token."
+            echo "💡 Check that your JWT token is valid and not expired."
+            echo "Full response: $USER_INFO"
             exit 1
           fi
           echo "✅ User ID: ${USER_ID}"
 
-          # 2. Настройки фарма
           FROM_LANG="en"
           TO_LANG="fr"
-          STORY_SLUG="fr-en-le-passeport" # История для курса EN->FR
-          TARGET_XP_PER_CYCLE=500 # Сколько XP фармим за цикл для создания наград
-          MAX_CYCLES=20 # Максимум циклов, чтобы не перегружать
+          STORY_SLUG="fr-en-le-passeport"
+          TARGET_XP_PER_CYCLE=500
+          MAX_CYCLES=20
 
-          echo "🚀 Farming $TARGET_XP_PER_CYCLE XP per cycle to generate rewards..."
+          echo "🚀 Farming $TARGET_XP_PER_CYCLE XP per cycle..."
 
-          # 3. Функция завершения истории (создает награды)
           complete_story() {
             local now=$(date +%s)
-            local dur=$((RANDOM % 60 + 120)) # 2-3 минуты
-
+            local dur=$((RANDOM % 60 + 120))
             curl -s -X POST "https://stories.duolingo.com/api2/stories/${STORY_SLUG}/complete" \
               -H "Authorization: Bearer ${JWT}" \
               -H "Content-Type: application/json" \
               -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              --max-time 30 \
               -d "{
                 \"awardXp\": true,
                 \"completedBonusChallenge\": true,
@@ -84,49 +92,48 @@ jobs:
               }"
           }
 
-          # 4. Функция поиска доступных наград с гемами
           check_gems() {
             local response=$(curl -s "https://www.duolingo.com/2023-05-23/users/${USER_ID}?fields=rewardBundles{rewards}" \
               -H "Authorization: Bearer ${JWT}" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-            # Извлекаем ID только наград типа SKILL_COMPLETION
-            echo "$response" | grep -o '"id":"SKILL_COMPLETION[^"]*"' | sed 's/"id":"//;s/"//g'
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              --max-time 30)
+            echo "$response" | grep -o '"id":"SKILL_COMPLETION[^"]*"' | sed 's/"id":"//;s/"//g' || true
           }
 
-          # 5. Функция забора награды
           claim_gem() {
             local reward_id=$1
             curl -s -X PATCH "https://www.duolingo.com/2023-05-23/users/${USER_ID}/rewards/${reward_id}" \
               -H "Authorization: Bearer ${JWT}" \
               -H "Content-Type: application/json" \
               -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              --max-time 30 \
               -d '{"consumed":true}'
           }
 
-          # 6. Основной цикл
           TOTAL_GEMS=0
           CYCLE=0
 
           while [ $CYCLE -lt $MAX_CYCLES ]; do
             CYCLE=$((CYCLE + 1))
-            echo "--- Цикл $CYCLE/$MAX_CYCLES ---"
+            echo "--- Cycle $CYCLE/$MAX_CYCLES ---"
 
-            # Шаг 1: Фармим XP, чтобы создать награды
-            echo "📤 Farming XP to generate rewards..."
+            echo "📤 Farming XP..."
             XP_GAINED=0
             STORY_COUNT=0
+            FAIL_COUNT=0
 
-            while [ $XP_GAINED -lt $TARGET_XP_PER_CYCLE ]; do
+            while [ $XP_GAINED -lt $TARGET_XP_PER_CYCLE ] && [ $FAIL_COUNT -lt 5 ]; do
               RESPONSE=$(complete_story)
-              AWARD=$(echo "$RESPONSE" | grep -o '"awardedXp":[0-9]*' | grep -o '[0-9]*')
+              AWARD=$(echo "$RESPONSE" | grep -o '"awardedXp":[0-9]*' | grep -o '[0-9]*' || true)
 
               if [ -n "$AWARD" ] && [ "$AWARD" != "0" ]; then
                 XP_GAINED=$((XP_GAINED + AWARD))
                 STORY_COUNT=$((STORY_COUNT + 1))
+                FAIL_COUNT=0
                 echo "  ✅ +${AWARD} XP (${XP_GAINED}/${TARGET_XP_PER_CYCLE})"
               else
-                echo "  ⚠️  Retrying story completion..."
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                echo "  ⚠️  Failed (${FAIL_COUNT}/5). Response: ${RESPONSE:0:150}"
                 sleep 2
               fi
               sleep 0.5
@@ -134,52 +141,47 @@ jobs:
 
             echo "✅ Farmed ${XP_GAINED} XP via ${STORY_COUNT} stories"
 
-            # Шаг 2: Даем Duolingo время начислить награды
-            echo "⏳ Waiting for rewards to be credited..."
+            echo "⏳ Waiting for rewards..."
             sleep 5
 
-            # Шаг 3: Ищем и забираем гемы
-            echo "🔍 Checking for available gem rewards..."
+            echo "🔍 Checking rewards..."
             REWARD_IDS=$(check_gems)
 
             if [ -z "$REWARD_IDS" ]; then
-              echo "ℹ️ No SKILL_COMPLETION rewards found. Waiting longer..."
+              echo "ℹ️ No rewards yet. Waiting longer..."
               sleep 10
               REWARD_IDS=$(check_gems)
             fi
 
             if [ -n "$REWARD_IDS" ]; then
-              echo "🎯 Found rewards, claiming..."
+              echo "🎯 Claiming rewards..."
               CLAIMED_COUNT=0
               for RID in $REWARD_IDS; do
                 if [ -z "$RID" ]; then continue; fi
                 RESPONSE=$(claim_gem "$RID")
-                # Проверяем успех (можно по коду ответа, но curl не возвращает его напрямую)
                 if echo "$RESPONSE" | grep -q '"gems"'; then
-                  GEMS=$(echo "$RESPONSE" | grep -o '"gems":[0-9]*' | grep -o '[0-9]*')
+                  GEMS=$(echo "$RESPONSE" | grep -o '"gems":[0-9]*' | grep -o '[0-9]*' || true)
                   TOTAL_GEMS=$((TOTAL_GEMS + GEMS))
                   CLAIMED_COUNT=$((CLAIMED_COUNT + 1))
                   echo "  💎 +${GEMS} gems (total: ${TOTAL_GEMS})"
                 else
-                  echo "  ⚠️  Could not claim reward ${RID}"
+                  echo "  ⚠️  Could not claim ${RID}: ${RESPONSE:0:100}"
                 fi
                 sleep 0.3
               done
-              echo "✅ Claimed ${CLAIMED_COUNT} rewards in this cycle"
+              echo "✅ Claimed ${CLAIMED_COUNT} rewards"
             else
-              echo "ℹ️ No rewards available yet. Moving to next cycle..."
+              echo "ℹ️ No rewards available."
             fi
 
-            # Пауза между циклами
             if [ $CYCLE -lt $MAX_CYCLES ]; then
-              echo "⏳ Waiting before next cycle..."
               sleep 5
             fi
           done
 
           echo ""
           echo "📊 ================================"
-          echo "📊 Total gems acquired: ${TOTAL_GEMS}"
-          echo "📊 Cycles completed: ${CYCLE}"
+          echo "📊 Total gems: ${TOTAL_GEMS}"
+          echo "📊 Cycles: ${CYCLE}"
           echo "📊 ================================"
-          echo "✨ Gem automation completed at: $(date -u '+%H:%M:%S UTC')"
+          echo "✨ Done at: $(date -u '+%H:%M:%S UTC')"
